@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+import re
 import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -150,14 +151,12 @@ def vel_bar(v):
     return "⚫⚫⚫⚫⚫"
 
 def get_shop_link(product):
-    """สร้าง TikTok Shop link จาก itemId"""
     item_id = get_field(product, "itemId", default="")
     if item_id and item_id != "?":
         return f"https://www.tiktok.com/view/product/{item_id}"
     return ""
 
 def get_image_url(product):
-    """ดึง URL รูปสินค้า"""
     return get_field(product, "itemPicUrl", "picUrl", "imageUrl", default="")
 
 
@@ -304,8 +303,17 @@ def split_zones(scored):
 # SEND TELEGRAM
 # ══════════════════════════════════════
 
+def html_to_plain(text):
+    """แปลง HTML เป็น plain text โดยเก็บ URL ไว้"""
+    # แทน <a href="url">text</a> ด้วย text: url
+    text = re.sub(r'<a href="([^"]+)">([^<]+)</a>', r'\2: \1', text)
+    # ลบ tag อื่นๆ
+    text = re.sub(r'<[^>]+>', '', text)
+    return text
+
+
 def send_message(text):
-    """ส่งข้อความธรรมดา"""
+    """ส่งข้อความ ถ้า HTML fail จะ fallback plain text"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
     for idx, chunk in enumerate(chunks):
@@ -317,19 +325,22 @@ def send_message(text):
             }, timeout=15)
             print(f"  message chunk {idx+1}: {r.status_code}")
             if r.status_code != 200:
-                print(f"  Error: {r.text[:200]}")
-                # fallback plain text
-                plain = chunk.replace("<b>","").replace("</b>","").replace("<i>","").replace("</i>","")
-                requests.post(url, json={"chat_id": CHAT_ID, "text": plain}, timeout=15)
+                print(f"  HTML fail: {r.text[:100]}")
+                print(f"  ลอง plain text...")
+                plain = html_to_plain(chunk)
+                r2 = requests.post(url, json={
+                    "chat_id": CHAT_ID,
+                    "text":    plain,
+                }, timeout=15)
+                print(f"  plain: {r2.status_code}")
         except Exception as e:
             print(f"  Exception: {e}")
         time.sleep(1)
 
 
 def send_photo(image_url, caption):
-    """ส่งรูปสินค้าพร้อม caption"""
+    """ส่งรูปพร้อม caption"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    # caption จำกัด 1024 ตัวอักษร
     caption = caption[:1024]
     try:
         r = requests.post(url, json={
@@ -340,8 +351,7 @@ def send_photo(image_url, caption):
         }, timeout=15)
         print(f"  photo: {r.status_code}")
         if r.status_code != 200:
-            print(f"  Photo error: {r.text[:200]}")
-            # ถ้ารูปส่งไม่ได้ ส่งเป็นข้อความแทน
+            print(f"  Photo fail ส่งเป็นข้อความแทน")
             send_message(caption)
     except Exception as e:
         print(f"  Photo exception: {e}")
@@ -362,7 +372,7 @@ def fmt_zone_a_header(today_str):
 
 
 def fmt_photo_caption(rank, item):
-    """Caption สำหรับส่งพร้อมรูป (max 1024 ตัวอักษร)"""
+    """Caption สำหรับรูป Zone A (max 1024 ตัวอักษร)"""
     p         = item["product"]
     score     = item["score"]
     reasons   = item["reasons"]
@@ -400,14 +410,13 @@ def fmt_product_short(rank, item):
     price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
     sold_1d   = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
 
-    link_text = f"\n   🛒 <a href=\"{shop_link}\">TikTok Shop</a>" if shop_link else ""
-
-    return (
-        f"{rank}. {title}\n"
-        f"   {cat}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  "
-        f"{vel_icon(v)}{v}%  [{score}]"
-        f"{link_text}"
-    )
+    lines = [
+        f"\n{rank}. {title}",
+        f"   {cat}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  {vel_icon(v)}{v}%  [{score}]",
+    ]
+    if shop_link:
+        lines.append(f"   🛒 <a href=\"{shop_link}\">ดูใน TikTok Shop</a>")
+    return "\n".join(lines)
 
 
 def build_message2(zone_b):
@@ -442,26 +451,23 @@ def main():
     zone_a, zone_b = split_zones(scored)
     today_str = datetime.now().strftime("%d/%m/%Y")
 
-    # ── Zone A Header ──
+    # Header
     print("ส่ง Zone A header...")
     send_message(fmt_zone_a_header(today_str))
     time.sleep(2)
 
-    # ── Zone A — ส่งทีละสินค้าเป็นรูป ──
+    # Zone A — ส่งทีละสินค้าเป็นรูป
     for i, item in enumerate(zone_a, 1):
         print(f"ส่ง Zone A อันดับ {i}...")
         caption   = fmt_photo_caption(i, item)
         image_url = item["image_url"]
-
         if image_url and image_url != "?":
             send_photo(image_url, caption)
         else:
-            # ไม่มีรูป ส่งเป็นข้อความแทน
             send_message(caption)
-
         time.sleep(2)
 
-    # ── Zone B ──
+    # Zone B
     print("ส่ง Zone B...")
     time.sleep(2)
     send_message(build_message2(zone_b))
