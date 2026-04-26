@@ -19,11 +19,29 @@ HEADERS = {
 TODAY     = datetime.now().strftime("%Y%m%d")
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
+ZONE_A_COUNT = 5
+ZONE_B_COUNT = 15
+
+# หมวดหมู่ภาษาไทย
+CATEGORY_MAP = {
+    "2":  "💄 บิวตี้",
+    "6":  "👗 แฟชั่น",
+    "9":  "🍜 อาหาร",
+    "12": "🏠 บ้านและสวน",
+    "13": "🏥 สุขภาพ",
+    "15": "📱 อิเล็กทรอนิกส์",
+    "20": "👶 แม่และเด็ก",
+    "21": "⚽ กีฬา",
+    "27": "🚗 ยานยนต์",
+    "28": "👗 เสื้อผ้าผู้หญิง",
+    "29": "👔 เสื้อผ้าผู้ชาย",
+}
+
 # ══════════════════════════════════════
 # FETCH FUNCTIONS
 # ══════════════════════════════════════
 
-def fetch_trpc(endpoint, input_dict, pages=10):
+def fetch_trpc(endpoint, input_dict, pages=20):
     all_items = []
     for page in range(1, pages + 1):
         input_dict["pageNo"] = page
@@ -99,7 +117,6 @@ def fetch_new_products():
 # ══════════════════════════════════════
 
 def get_field(product, *keys, default="?"):
-    """ลอง field หลายชื่อ รองรับ API ต่างโครงสร้าง"""
     for key in keys:
         val = product.get(key)
         if val is not None and val != "":
@@ -115,73 +132,117 @@ def days_since(discover_time_str):
         return 999
 
 
+def get_category(product):
+    cat_id = str(get_field(product, "categoryId", default=""))
+    return CATEGORY_MAP.get(cat_id, "🛍 อื่นๆ")
+
+
+def get_velocity(product):
+    """
+    Sales Velocity = % ยอดขายเมื่อวานเทียบกับยอดรวม
+    สูง = เพิ่งระเบิดตัว / ต่ำ = ขายมาสักพักแล้ว
+    """
+    sold_1d    = int(get_field(product, "soldCount1d", default=0) or 0)
+    sold_total = int(get_field(product, "soldCountTotal", default=0) or 0)
+    if sold_total > 0 and sold_1d > 0:
+        return round((sold_1d / sold_total) * 100, 1)
+    return 0.0
+
+
 # ══════════════════════════════════════
 # SCORING
+# รวมสูงสุด 100 คะแนน
+#
+# 30 คะแนน → ยอดขายเมื่อวาน
+#             ≥500 ชิ้น = 30 / ≥200 = 22 / ≥50 = 13 / >0 = 5
+#
+# 25 คะแนน → ความใหม่ของสินค้า
+#             ≤3 วัน = 25 / ≤7 วัน = 18 / ≤14 วัน = 10 / ≤30 วัน = 4
+#
+# 20 คะแนน → Sales Velocity (% ขายเมื่อวาน/รวม)
+#             ≥50% = 20 / ≥20% = 14 / ≥10% = 8 / >0% = 3
+#             → Velocity สูง = เพิ่งระเบิดตัว!
+#
+# 15 คะแนน → ติดหลาย API (สัญญาณจากหลายแหล่ง)
+#             3+ แหล่ง = 15 / 2 แหล่ง = 9 / 1 แหล่ง = 3
+#
+# 10 คะแนน → ราคาขายง่าย
+#             50-500 บาท = 10 / <50 = 6 / >500 = 3
 # ══════════════════════════════════════
 
 def calculate_score(product, source_count):
     score = 0
     reasons = []
 
-    # 1. ยอดขาย 1 วัน (35 คะแนน)
+    # 1. ยอดขายเมื่อวาน (max 30)
     sold_1d = int(get_field(product, "soldCount1d", "soldCount", default=0) or 0)
     if sold_1d >= 500:
-        score += 35
+        score += 30
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 🔥")
     elif sold_1d >= 200:
-        score += 25
+        score += 22
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 📈")
     elif sold_1d >= 50:
-        score += 15
+        score += 13
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
     elif sold_1d > 0:
         score += 5
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
 
-    # 2. ความใหม่ (30 คะแนน)
+    # 2. ความใหม่ (max 25)
     discover = get_field(product, "discoverTime", "createTime", "onlineTime", default="")
     days = days_since(discover)
     if days <= 3:
-        score += 30
+        score += 25
         reasons.append("ใหม่มาก! เพิ่งเข้า 3 วัน 🆕")
     elif days <= 7:
-        score += 20
+        score += 18
         reasons.append(f"ใหม่ {days} วัน")
     elif days <= 14:
         score += 10
         reasons.append(f"เข้ามา {days} วัน")
+    elif days <= 30:
+        score += 4
+        reasons.append(f"เข้ามา {days} วัน")
 
-    # 3. ติดหลาย API (20 คะแนน)
-    if source_count >= 3:
+    # 3. Sales Velocity (max 20)
+    velocity = get_velocity(product)
+    if velocity >= 50:
         score += 20
-        reasons.append("ติดสัญญาณ 3 แหล่ง ✅")
+        reasons.append(f"Velocity {velocity}% ⚡ เพิ่งระเบิดตัว!")
+    elif velocity >= 20:
+        score += 14
+        reasons.append(f"Velocity {velocity}% กำลังพุ่ง")
+    elif velocity >= 10:
+        score += 8
+        reasons.append(f"Velocity {velocity}%")
+    elif velocity > 0:
+        score += 3
+        reasons.append(f"Velocity {velocity}%")
+
+    # 4. ติดหลาย API (max 15)
+    if source_count >= 3:
+        score += 15
+        reasons.append("ติดสัญญาณ 3+ แหล่ง ✅")
     elif source_count == 2:
-        score += 12
+        score += 9
         reasons.append("ติดสัญญาณ 2 แหล่ง")
     else:
-        score += 5
+        score += 3
 
-    # 4. ราคา (15 คะแนน)
+    # 5. ราคา (max 10)
     price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
     if 50 <= price <= 500:
-        score += 15
+        score += 10
         reasons.append(f"ราคา ฿{price:.0f} ขายง่าย 💰")
-    elif price < 50 and price > 0:
-        score += 8
+    elif 0 < price < 50:
+        score += 6
         reasons.append(f"ราคา ฿{price:.0f} ถูกมาก")
-    elif price > 0:
-        reasons.append(f"ราคา ฿{price:.0f}")
+    elif price > 500:
+        score += 3
+        reasons.append(f"ราคา ฿{price:.0f} สูงหน่อย")
 
     return min(score, 100), reasons
-
-
-def zone_label(score):
-    if score >= 60:
-        return "A"
-    elif score >= 35:
-        return "B"
-    else:
-        return "C"
 
 
 # ══════════════════════════════════════
@@ -201,7 +262,6 @@ def collect_all_products():
     for name, items in sources.items():
         print(f"{name}: {len(items)} ตัว")
 
-    # รวมและนับซ้ำ
     item_map   = {}
     item_count = {}
 
@@ -217,15 +277,15 @@ def collect_all_products():
 
     print(f"รวม unique: {len(item_map)} ตัว")
 
-    # คำนวณ score
     scored = []
     for iid, product in item_map.items():
         score, reasons = calculate_score(product, item_count[iid])
         scored.append({
-            "product": product,
-            "score":   score,
-            "reasons": reasons,
-            "zone":    zone_label(score),
+            "product":  product,
+            "score":    score,
+            "reasons":  reasons,
+            "velocity": get_velocity(product),
+            "category": get_category(product),
         })
 
     # กรองออกถ้าไม่มีชื่อหรือราคา
@@ -236,13 +296,15 @@ def collect_all_products():
     ]
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-
-    za = [x for x in scored if x["zone"] == "A"]
-    zb = [x for x in scored if x["zone"] == "B"]
-    zc = [x for x in scored if x["zone"] == "C"]
-    print(f"Zone A: {len(za)}  Zone B: {len(zb)}  Zone C: {len(zc)}")
-
+    print(f"ผ่านกรอง: {len(scored)} ตัว")
     return scored
+
+
+def split_zones(scored):
+    zone_a = scored[:ZONE_A_COUNT]
+    zone_b = scored[ZONE_A_COUNT:ZONE_A_COUNT + ZONE_B_COUNT]
+    print(f"Zone A: {len(zone_a)}  Zone B: {len(zone_b)}")
+    return zone_a, zone_b
 
 
 # ══════════════════════════════════════
@@ -250,16 +312,33 @@ def collect_all_products():
 # ══════════════════════════════════════
 
 def fmt_product_full(rank, item):
-    p       = item["product"]
-    score   = item["score"]
-    reasons = item["reasons"]
-    title   = get_field(p, "itemTitle", "title", "name", "goodsName")[:40]
-    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    total   = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
+    p         = item["product"]
+    score     = item["score"]
+    reasons   = item["reasons"]
+    category  = item["category"]
+    velocity  = item["velocity"]
+    title     = get_field(p, "itemTitle", "title", "name", "goodsName")[:40]
+    price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    total     = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
+    sold_1d   = int(get_field(p, "soldCount1d", default=0) or 0)
+
+    # Velocity bar แสดงเป็นภาพ
+    if velocity >= 50:
+        vel_bar = "🔴🔴🔴🔴🔴"
+    elif velocity >= 30:
+        vel_bar = "🟠🟠🟠🟠⚫"
+    elif velocity >= 20:
+        vel_bar = "🟡🟡🟡⚫⚫"
+    elif velocity >= 10:
+        vel_bar = "🟢🟢⚫⚫⚫"
+    else:
+        vel_bar = "⚫⚫⚫⚫⚫"
 
     lines = [
         f"\n{rank}. <b>{title}</b>",
-        f"   💰 ฿{price:.0f}  📦 ยอดรวม {total:,}",
+        f"   {category}",
+        f"   💰 ฿{price:.0f}  📦 ยอดรวม {total:,}  เมื่อวาน {sold_1d:,}",
+        f"   ⚡ Velocity: {vel_bar} {velocity}%",
         f"   🎯 Score: {score}/100",
     ]
     for r in reasons[:2]:
@@ -268,12 +347,21 @@ def fmt_product_full(rank, item):
 
 
 def fmt_product_short(rank, item):
-    p     = item["product"]
-    score = item["score"]
-    title = get_field(p, "itemTitle", "title", "name", "goodsName")[:35]
-    price = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    sold  = int(get_field(p, "soldCount1d", "soldCount", "sales", default=0) or 0)
-    return f"{rank}. {title}\n   ฿{price:.0f}  เมื่อวาน {sold:,} ชิ้น  [{score}]"
+    p        = item["product"]
+    score    = item["score"]
+    category = item["category"]
+    velocity = item["velocity"]
+    title    = get_field(p, "itemTitle", "title", "name", "goodsName")[:33]
+    price    = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    sold_1d  = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
+
+    vel_icon = "🔴" if velocity >= 50 else "🟠" if velocity >= 30 else "🟡" if velocity >= 20 else "🟢" if velocity >= 10 else "⚫"
+
+    return (
+        f"{rank}. {title}\n"
+        f"   {category}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  "
+        f"{vel_icon}{velocity}%  [Score:{score}]"
+    )
 
 
 def build_message1(zone_a):
@@ -282,50 +370,39 @@ def build_message1(zone_a):
         "🟢 <b>ทำเลยวันนี้! Top 5 ปักตะกร้า</b>",
         f"📅 {today_str}",
         "━━━━━━━━━━━━━━━━━━━━",
+        "<i>⚡Velocity = % ที่ขายได้เมื่อวาน / ยอดรวม</i>",
+        "<i>สูง = เพิ่งระเบิดตัว คู่แข่งยังน้อย!</i>",
     ]
 
     if zone_a:
-        for i, item in enumerate(zone_a[:5], 1):
+        for i, item in enumerate(zone_a, 1):
             lines.append(fmt_product_full(i, item))
     else:
-        lines.append("\n⚠️ ไม่มีสินค้า Zone A วันนี้")
+        lines.append("\n⚠️ ไม่มีสินค้าวันนี้")
 
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
-        "💡 Score สูง = คู่แข่งน้อย + ตลาดต้องการ",
-        "📩 ดูรายการเพิ่มเติมในข้อความถัดไป",
+        "📩 ดูรายการสำรองในข้อความถัดไป",
     ]
     return "\n".join(lines)
 
 
-def build_message2(zone_b, zone_c):
+def build_message2(zone_b):
     lines = [
-        "📋 <b>รายการสำรอง</b>",
+        "🟡 <b>Zone B — ยังทันถ้ารีบ (อันดับ 6-20)</b>",
+        "<i>คู่แข่งเริ่มมีบ้างแล้ว แต่ยังทำได้</i>",
         "━━━━━━━━━━━━━━━━━━━━",
-        "\n🟡 <b>Zone B — ยังทันถ้ารีบ</b>",
-        "<i>(คู่แข่งเริ่มมีบ้างแล้ว)</i>",
     ]
 
     if zone_b:
-        for i, item in enumerate(zone_b[:10], 1):
+        for i, item in enumerate(zone_b, 1):
             lines.append(fmt_product_short(i, item))
     else:
-        lines.append("  ไม่มีสินค้าใน Zone นี้วันนี้")
+        lines.append("ไม่มีสินค้าวันนี้")
 
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
-        "\n🔴 <b>Zone C — อ้างอิงเท่านั้น</b>",
-        "<i>(ขายดีแล้ว แต่คู่แข่งเยอะ)</i>",
-    ]
-
-    if zone_c:
-        for i, item in enumerate(zone_c[:10], 1):
-            lines.append(fmt_product_short(i, item))
-    else:
-        lines.append("  ไม่มีสินค้าใน Zone นี้วันนี้")
-
-    lines += [
-        "\n━━━━━━━━━━━━━━━━━━━━",
+        "⚡ 🔴≥50%  🟠≥30%  🟡≥20%  🟢≥10%  ⚫<10%",
         "🔄 อัพเดทอัตโนมัติทุก 09:00 น.",
     ]
     return "\n".join(lines)
@@ -356,12 +433,10 @@ def main():
         send_telegram("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้")
         return
 
-    zone_a = [x for x in scored if x["zone"] == "A"]
-    zone_b = [x for x in scored if x["zone"] == "B"]
-    zone_c = [x for x in scored if x["zone"] == "C"]
+    zone_a, zone_b = split_zones(scored)
 
     send_telegram(build_message1(zone_a))
-    send_telegram(build_message2(zone_b, zone_c))
+    send_telegram(build_message2(zone_b))
     print("✅ ส่ง Telegram เรียบร้อย")
 
 
