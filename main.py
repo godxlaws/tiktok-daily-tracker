@@ -18,7 +18,7 @@ TODAY     = datetime.now().strftime("%Y%m%d")
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
 ZONE_A_COUNT = 5
-ZONE_B_COUNT = 10  # ลดจาก 15 → 10
+ZONE_B_COUNT = 10
 
 CATEGORY_MAP = {
     "2":  "💄 บิวตี้",
@@ -102,6 +102,15 @@ def fetch_new_products():
 # HELPERS
 # ══════════════════════════════════════
 
+def esc(text):
+    """Escape HTML อักขระพิเศษ ป้องกัน Telegram parse error"""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
 def get_field(product, *keys, default="?"):
     for key in keys:
         val = product.get(key)
@@ -143,7 +152,7 @@ def vel_bar(v):
 
 
 # ══════════════════════════════════════
-# SCORING (รวมสูงสุด 100)
+# SCORING
 # ยอดขายเมื่อวาน  30
 # ความใหม่         25
 # Velocity         20
@@ -187,7 +196,7 @@ def calculate_score(product, source_count):
     velocity = get_velocity(product)
     if velocity >= 50:
         score += 20
-        reasons.append(f"Velocity {velocity}% ⚡ เพิ่งระเบิดตัว!")
+        reasons.append(f"Velocity {velocity}% เพิ่งระเบิดตัว!")
     elif velocity >= 20:
         score += 14
         reasons.append(f"Velocity {velocity}% กำลังพุ่ง")
@@ -200,7 +209,7 @@ def calculate_score(product, source_count):
 
     if source_count >= 3:
         score += 15
-        reasons.append("ติดสัญญาณ 3+ แหล่ง ✅")
+        reasons.append("ติดสัญญาณ 3+ แหล่ง")
     elif source_count == 2:
         score += 9
         reasons.append("ติดสัญญาณ 2 แหล่ง")
@@ -210,13 +219,13 @@ def calculate_score(product, source_count):
     price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
     if 50 <= price <= 500:
         score += 10
-        reasons.append(f"ราคา ฿{price:.0f} ขายง่าย 💰")
+        reasons.append(f"ราคา {price:.0f} บาท ขายง่าย")
     elif 0 < price < 50:
         score += 6
-        reasons.append(f"ราคา ฿{price:.0f} ถูกมาก")
+        reasons.append(f"ราคา {price:.0f} บาท ถูกมาก")
     elif price > 500:
         score += 3
-        reasons.append(f"ราคา ฿{price:.0f} สูงหน่อย")
+        reasons.append(f"ราคา {price:.0f} บาท สูงหน่อย")
 
     return min(score, 100), reasons
 
@@ -261,6 +270,7 @@ def collect_all_products():
             "category": get_category(product),
         })
 
+    # กรองเฉพาะมีชื่อและราคา
     scored = [
         x for x in scored
         if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?" and
@@ -280,7 +290,7 @@ def split_zones(scored):
 
 
 # ══════════════════════════════════════
-# FORMAT
+# FORMAT — ใช้ esc() ทุกที่ที่มีชื่อสินค้า
 # ══════════════════════════════════════
 
 def fmt_product_full(rank, item):
@@ -289,7 +299,7 @@ def fmt_product_full(rank, item):
     reasons = item["reasons"]
     cat     = item["category"]
     v       = item["velocity"]
-    title   = get_field(p, "itemTitle", "title", "name", "goodsName")[:40]
+    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:40])
     price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
     total   = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
     sold_1d = int(get_field(p, "soldCount1d", default=0) or 0)
@@ -302,7 +312,7 @@ def fmt_product_full(rank, item):
         f"   🎯 Score: {score}/100",
     ]
     for r in reasons[:2]:
-        lines.append(f"   • {r}")
+        lines.append(f"   • {esc(r)}")
     return "\n".join(lines)
 
 
@@ -311,7 +321,7 @@ def fmt_product_short(rank, item):
     score   = item["score"]
     cat     = item["category"]
     v       = item["velocity"]
-    title   = get_field(p, "itemTitle", "title", "name", "goodsName")[:30]
+    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
     price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
     sold_1d = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
     return (
@@ -321,17 +331,13 @@ def fmt_product_short(rank, item):
     )
 
 
-# ══════════════════════════════════════
-# BUILD MESSAGES
-# ══════════════════════════════════════
-
 def build_message1(zone_a):
     today_str = datetime.now().strftime("%d/%m/%Y")
     lines = [
         "🟢 <b>ทำเลยวันนี้! Top 5 ปักตะกร้า</b>",
         f"📅 {today_str}",
         "━━━━━━━━━━━━━━━━━━━━",
-        "<i>⚡Velocity = % ขายเมื่อวาน/ยอดรวม | สูง=เพิ่งระเบิด!</i>",
+        "<i>Velocity = % ขายเมื่อวาน/ยอดรวม | สูง=เพิ่งระเบิด!</i>",
     ]
     if zone_a:
         for i, item in enumerate(zone_a, 1):
@@ -357,29 +363,47 @@ def build_message2(zone_b):
         lines.append("ไม่มีสินค้าวันนี้")
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
-        "⚡ 🔴≥50%  🟠≥30%  🟡≥20%  🟢≥10%  ⚫<10%",
+        "🔴>=50%  🟠>=30%  🟡>=20%  🟢>=10%  ⚫<10%",
         "🔄 อัพเดทอัตโนมัติทุก 09:00 น.",
     ]
     return "\n".join(lines)
 
 
 # ══════════════════════════════════════
-# SEND TELEGRAM
+# SEND TELEGRAM — ไม่ใช้ parse_mode HTML
+# ถ้า HTML fail จะ fallback เป็น plain text
 # ══════════════════════════════════════
 
-def send_telegram(text):
+def send_telegram(text, label=""):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # ตัดเป็น chunk ≤ 3500 ตัวอักษร (เผื่อ margin)
     chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
     for idx, chunk in enumerate(chunks):
-        r = requests.post(url, json={
-            "chat_id":    CHAT_ID,
-            "text":       chunk,
-            "parse_mode": "HTML",
-        }, timeout=15)
-        print(f"  chunk {idx+1}/{len(chunks)}: status {r.status_code}")
-        if r.status_code != 200:
-            print(f"  Error: {r.text}")
+        print(f"  ส่ง {label} chunk {idx+1}/{len(chunks)} ({len(chunk)} ตัวอักษร)")
+        try:
+            # ลอง HTML ก่อน
+            r = requests.post(url, json={
+                "chat_id":    CHAT_ID,
+                "text":       chunk,
+                "parse_mode": "HTML",
+            }, timeout=15)
+            print(f"  status: {r.status_code}")
+
+            # ถ้า HTML fail ส่งแบบ plain text แทน
+            if r.status_code != 200:
+                print(f"  HTML fail: {r.text[:200]}")
+                print(f"  ลอง plain text...")
+                # ลบ HTML tags
+                plain = chunk.replace("<b>", "").replace("</b>", "")
+                plain = plain.replace("<i>", "").replace("</i>", "")
+                r2 = requests.post(url, json={
+                    "chat_id": CHAT_ID,
+                    "text":    plain,
+                }, timeout=15)
+                print(f"  plain text status: {r2.status_code}")
+
+        except Exception as e:
+            print(f"  Exception: {e}")
+
         time.sleep(1)
 
 
@@ -391,18 +415,18 @@ def main():
     scored = collect_all_products()
 
     if not scored:
-        send_telegram("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้")
+        send_telegram("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้", "error")
         return
 
     zone_a, zone_b = split_zones(scored)
 
     print("ส่ง message 1 (Zone A)...")
-    send_telegram(build_message1(zone_a))
+    send_telegram(build_message1(zone_a), "ZoneA")
 
     time.sleep(3)
 
     print("ส่ง message 2 (Zone B)...")
-    send_telegram(build_message2(zone_b))
+    send_telegram(build_message2(zone_b), "ZoneB")
 
     print("✅ เสร็จแล้ว")
 
