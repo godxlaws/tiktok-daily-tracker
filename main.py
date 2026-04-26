@@ -103,7 +103,6 @@ def fetch_new_products():
 # ══════════════════════════════════════
 
 def esc(text):
-    """Escape HTML อักขระพิเศษ ป้องกัน Telegram parse error"""
     return (
         str(text)
         .replace("&", "&amp;")
@@ -149,6 +148,17 @@ def vel_bar(v):
     if v >= 20: return "🟡🟡🟡⚫⚫"
     if v >= 10: return "🟢🟢⚫⚫⚫"
     return "⚫⚫⚫⚫⚫"
+
+def get_shop_link(product):
+    """สร้าง TikTok Shop link จาก itemId"""
+    item_id = get_field(product, "itemId", default="")
+    if item_id and item_id != "?":
+        return f"https://www.tiktok.com/view/product/{item_id}"
+    return ""
+
+def get_image_url(product):
+    """ดึง URL รูปสินค้า"""
+    return get_field(product, "itemPicUrl", "picUrl", "imageUrl", default="")
 
 
 # ══════════════════════════════════════
@@ -263,14 +273,15 @@ def collect_all_products():
     for iid, product in item_map.items():
         score, reasons = calculate_score(product, item_count[iid])
         scored.append({
-            "product":  product,
-            "score":    score,
-            "reasons":  reasons,
-            "velocity": get_velocity(product),
-            "category": get_category(product),
+            "product":   product,
+            "score":     score,
+            "reasons":   reasons,
+            "velocity":  get_velocity(product),
+            "category":  get_category(product),
+            "image_url": get_image_url(product),
+            "shop_link": get_shop_link(product),
         })
 
-    # กรองเฉพาะมีชื่อและราคา
     scored = [
         x for x in scored
         if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?" and
@@ -290,65 +301,113 @@ def split_zones(scored):
 
 
 # ══════════════════════════════════════
-# FORMAT — ใช้ esc() ทุกที่ที่มีชื่อสินค้า
+# SEND TELEGRAM
 # ══════════════════════════════════════
 
-def fmt_product_full(rank, item):
-    p       = item["product"]
-    score   = item["score"]
-    reasons = item["reasons"]
-    cat     = item["category"]
-    v       = item["velocity"]
-    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:40])
-    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    total   = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
-    sold_1d = int(get_field(p, "soldCount1d", default=0) or 0)
+def send_message(text):
+    """ส่งข้อความธรรมดา"""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
+    for idx, chunk in enumerate(chunks):
+        try:
+            r = requests.post(url, json={
+                "chat_id":    CHAT_ID,
+                "text":       chunk,
+                "parse_mode": "HTML",
+            }, timeout=15)
+            print(f"  message chunk {idx+1}: {r.status_code}")
+            if r.status_code != 200:
+                print(f"  Error: {r.text[:200]}")
+                # fallback plain text
+                plain = chunk.replace("<b>","").replace("</b>","").replace("<i>","").replace("</i>","")
+                requests.post(url, json={"chat_id": CHAT_ID, "text": plain}, timeout=15)
+        except Exception as e:
+            print(f"  Exception: {e}")
+        time.sleep(1)
+
+
+def send_photo(image_url, caption):
+    """ส่งรูปสินค้าพร้อม caption"""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    # caption จำกัด 1024 ตัวอักษร
+    caption = caption[:1024]
+    try:
+        r = requests.post(url, json={
+            "chat_id":    CHAT_ID,
+            "photo":      image_url,
+            "caption":    caption,
+            "parse_mode": "HTML",
+        }, timeout=15)
+        print(f"  photo: {r.status_code}")
+        if r.status_code != 200:
+            print(f"  Photo error: {r.text[:200]}")
+            # ถ้ารูปส่งไม่ได้ ส่งเป็นข้อความแทน
+            send_message(caption)
+    except Exception as e:
+        print(f"  Photo exception: {e}")
+        send_message(caption)
+
+
+# ══════════════════════════════════════
+# FORMAT
+# ══════════════════════════════════════
+
+def fmt_zone_a_header(today_str):
+    return (
+        "🟢 <b>ทำเลยวันนี้! Top 5 ปักตะกร้า</b>\n"
+        f"📅 {today_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<i>Velocity = % ขายเมื่อวาน/ยอดรวม | สูง=เพิ่งระเบิด!</i>"
+    )
+
+
+def fmt_photo_caption(rank, item):
+    """Caption สำหรับส่งพร้อมรูป (max 1024 ตัวอักษร)"""
+    p         = item["product"]
+    score     = item["score"]
+    reasons   = item["reasons"]
+    cat       = item["category"]
+    v         = item["velocity"]
+    shop_link = item["shop_link"]
+    title     = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:45])
+    price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    total     = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
+    sold_1d   = int(get_field(p, "soldCount1d", default=0) or 0)
 
     lines = [
-        f"\n{rank}. <b>{title}</b>",
-        f"   {cat}",
-        f"   💰 ฿{price:.0f}  📦 รวม {total:,}  เมื่อวาน {sold_1d:,}",
-        f"   ⚡ {vel_bar(v)} {v}%",
-        f"   🎯 Score: {score}/100",
+        f"{rank}. <b>{title}</b>",
+        f"{cat}",
+        f"💰 ฿{price:.0f}  📦 รวม {total:,}  เมื่อวาน {sold_1d:,}",
+        f"⚡ {vel_bar(v)} {v}%",
+        f"🎯 Score: {score}/100",
     ]
     for r in reasons[:2]:
-        lines.append(f"   • {esc(r)}")
+        lines.append(f"• {esc(r)}")
+    if shop_link:
+        lines.append(f"\n🛒 <a href=\"{shop_link}\">ดูสินค้าใน TikTok Shop</a>")
+
     return "\n".join(lines)
 
 
 def fmt_product_short(rank, item):
-    p       = item["product"]
-    score   = item["score"]
-    cat     = item["category"]
-    v       = item["velocity"]
-    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
-    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    sold_1d = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
+    """Zone B — แสดงสั้นๆ พร้อมลิงก์"""
+    p         = item["product"]
+    score     = item["score"]
+    cat       = item["category"]
+    v         = item["velocity"]
+    shop_link = item["shop_link"]
+    title     = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
+    price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    sold_1d   = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
+
+    link_text = f"\n   🛒 <a href=\"{shop_link}\">TikTok Shop</a>" if shop_link else ""
+
     return (
         f"{rank}. {title}\n"
         f"   {cat}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  "
         f"{vel_icon(v)}{v}%  [{score}]"
+        f"{link_text}"
     )
-
-
-def build_message1(zone_a):
-    today_str = datetime.now().strftime("%d/%m/%Y")
-    lines = [
-        "🟢 <b>ทำเลยวันนี้! Top 5 ปักตะกร้า</b>",
-        f"📅 {today_str}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "<i>Velocity = % ขายเมื่อวาน/ยอดรวม | สูง=เพิ่งระเบิด!</i>",
-    ]
-    if zone_a:
-        for i, item in enumerate(zone_a, 1):
-            lines.append(fmt_product_full(i, item))
-    else:
-        lines.append("\n⚠️ ไม่มีสินค้าวันนี้")
-    lines += [
-        "\n━━━━━━━━━━━━━━━━━━━━",
-        "📩 รายการสำรองในข้อความถัดไป",
-    ]
-    return "\n".join(lines)
 
 
 def build_message2(zone_b):
@@ -370,44 +429,6 @@ def build_message2(zone_b):
 
 
 # ══════════════════════════════════════
-# SEND TELEGRAM — ไม่ใช้ parse_mode HTML
-# ถ้า HTML fail จะ fallback เป็น plain text
-# ══════════════════════════════════════
-
-def send_telegram(text, label=""):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
-    for idx, chunk in enumerate(chunks):
-        print(f"  ส่ง {label} chunk {idx+1}/{len(chunks)} ({len(chunk)} ตัวอักษร)")
-        try:
-            # ลอง HTML ก่อน
-            r = requests.post(url, json={
-                "chat_id":    CHAT_ID,
-                "text":       chunk,
-                "parse_mode": "HTML",
-            }, timeout=15)
-            print(f"  status: {r.status_code}")
-
-            # ถ้า HTML fail ส่งแบบ plain text แทน
-            if r.status_code != 200:
-                print(f"  HTML fail: {r.text[:200]}")
-                print(f"  ลอง plain text...")
-                # ลบ HTML tags
-                plain = chunk.replace("<b>", "").replace("</b>", "")
-                plain = plain.replace("<i>", "").replace("</i>", "")
-                r2 = requests.post(url, json={
-                    "chat_id": CHAT_ID,
-                    "text":    plain,
-                }, timeout=15)
-                print(f"  plain text status: {r2.status_code}")
-
-        except Exception as e:
-            print(f"  Exception: {e}")
-
-        time.sleep(1)
-
-
-# ══════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════
 
@@ -415,18 +436,35 @@ def main():
     scored = collect_all_products()
 
     if not scored:
-        send_telegram("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้", "error")
+        send_message("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้")
         return
 
     zone_a, zone_b = split_zones(scored)
+    today_str = datetime.now().strftime("%d/%m/%Y")
 
-    print("ส่ง message 1 (Zone A)...")
-    send_telegram(build_message1(zone_a), "ZoneA")
+    # ── Zone A Header ──
+    print("ส่ง Zone A header...")
+    send_message(fmt_zone_a_header(today_str))
+    time.sleep(2)
 
-    time.sleep(3)
+    # ── Zone A — ส่งทีละสินค้าเป็นรูป ──
+    for i, item in enumerate(zone_a, 1):
+        print(f"ส่ง Zone A อันดับ {i}...")
+        caption   = fmt_photo_caption(i, item)
+        image_url = item["image_url"]
 
-    print("ส่ง message 2 (Zone B)...")
-    send_telegram(build_message2(zone_b), "ZoneB")
+        if image_url and image_url != "?":
+            send_photo(image_url, caption)
+        else:
+            # ไม่มีรูป ส่งเป็นข้อความแทน
+            send_message(caption)
+
+        time.sleep(2)
+
+    # ── Zone B ──
+    print("ส่ง Zone B...")
+    time.sleep(2)
+    send_message(build_message2(zone_b))
 
     print("✅ เสร็จแล้ว")
 
