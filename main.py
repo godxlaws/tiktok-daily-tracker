@@ -5,9 +5,6 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-# ══════════════════════════════════════
-# CONFIG
-# ══════════════════════════════════════
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID   = os.environ["CHAT_ID"]
 
@@ -21,7 +18,7 @@ TODAY     = datetime.now().strftime("%Y%m%d")
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
 ZONE_A_COUNT = 5
-ZONE_B_COUNT = 15
+ZONE_B_COUNT = 10  # ลดจาก 15 → 10
 
 CATEGORY_MAP = {
     "2":  "💄 บิวตี้",
@@ -130,36 +127,34 @@ def get_velocity(product):
         return round((sold_1d / sold_total) * 100, 1)
     return 0.0
 
-def vel_icon(velocity):
-    if velocity >= 50: return "🔴"
-    if velocity >= 30: return "🟠"
-    if velocity >= 20: return "🟡"
-    if velocity >= 10: return "🟢"
+def vel_icon(v):
+    if v >= 50: return "🔴"
+    if v >= 30: return "🟠"
+    if v >= 20: return "🟡"
+    if v >= 10: return "🟢"
     return "⚫"
 
-def vel_bar(velocity):
-    if velocity >= 50: return "🔴🔴🔴🔴🔴"
-    if velocity >= 30: return "🟠🟠🟠🟠⚫"
-    if velocity >= 20: return "🟡🟡🟡⚫⚫"
-    if velocity >= 10: return "🟢🟢⚫⚫⚫"
+def vel_bar(v):
+    if v >= 50: return "🔴🔴🔴🔴🔴"
+    if v >= 30: return "🟠🟠🟠🟠⚫"
+    if v >= 20: return "🟡🟡🟡⚫⚫"
+    if v >= 10: return "🟢🟢⚫⚫⚫"
     return "⚫⚫⚫⚫⚫"
 
 
 # ══════════════════════════════════════
 # SCORING (รวมสูงสุด 100)
-#
-# ยอดขายเมื่อวาน   → 30 คะแนน
-# ความใหม่          → 25 คะแนน
-# Sales Velocity   → 20 คะแนน
-# ติดหลาย API     → 15 คะแนน
-# ราคาขายง่าย      → 10 คะแนน
+# ยอดขายเมื่อวาน  30
+# ความใหม่         25
+# Velocity         20
+# ติดหลาย API    15
+# ราคา             10
 # ══════════════════════════════════════
 
 def calculate_score(product, source_count):
     score = 0
     reasons = []
 
-    # 1. ยอดขายเมื่อวาน (max 30)
     sold_1d = int(get_field(product, "soldCount1d", "soldCount", default=0) or 0)
     if sold_1d >= 500:
         score += 30
@@ -174,7 +169,6 @@ def calculate_score(product, source_count):
         score += 5
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
 
-    # 2. ความใหม่ (max 25)
     discover = get_field(product, "discoverTime", "createTime", "onlineTime", default="")
     days = days_since(discover)
     if days <= 3:
@@ -190,7 +184,6 @@ def calculate_score(product, source_count):
         score += 4
         reasons.append(f"เข้ามา {days} วัน")
 
-    # 3. Sales Velocity (max 20)
     velocity = get_velocity(product)
     if velocity >= 50:
         score += 20
@@ -205,7 +198,6 @@ def calculate_score(product, source_count):
         score += 3
         reasons.append(f"Velocity {velocity}%")
 
-    # 4. ติดหลาย API (max 15)
     if source_count >= 3:
         score += 15
         reasons.append("ติดสัญญาณ 3+ แหล่ง ✅")
@@ -215,7 +207,6 @@ def calculate_score(product, source_count):
     else:
         score += 3
 
-    # 5. ราคา (max 10)
     price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
     if 50 <= price <= 500:
         score += 10
@@ -356,7 +347,7 @@ def build_message1(zone_a):
 
 def build_message2(zone_b):
     lines = [
-        "🟡 <b>Zone B — ยังทันถ้ารีบ (อันดับ 6-20)</b>",
+        "🟡 <b>Zone B — ยังทันถ้ารีบ (อันดับ 6-15)</b>",
         "━━━━━━━━━━━━━━━━━━━━",
     ]
     if zone_b:
@@ -378,15 +369,18 @@ def build_message2(zone_b):
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
-    for chunk in chunks:
+    # ตัดเป็น chunk ≤ 3500 ตัวอักษร (เผื่อ margin)
+    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
+    for idx, chunk in enumerate(chunks):
         r = requests.post(url, json={
             "chat_id":    CHAT_ID,
             "text":       chunk,
             "parse_mode": "HTML",
-        }, timeout=10)
-        print(f"Telegram: {r.status_code}")
-        time.sleep(1)  # หน่วงนิดนึงไม่ให้ rate limit
+        }, timeout=15)
+        print(f"  chunk {idx+1}/{len(chunks)}: status {r.status_code}")
+        if r.status_code != 200:
+            print(f"  Error: {r.text}")
+        time.sleep(1)
 
 
 # ══════════════════════════════════════
@@ -402,12 +396,12 @@ def main():
 
     zone_a, zone_b = split_zones(scored)
 
-    print("ส่ง message 1...")
+    print("ส่ง message 1 (Zone A)...")
     send_telegram(build_message1(zone_a))
 
-    time.sleep(2)
+    time.sleep(3)
 
-    print("ส่ง message 2...")
+    print("ส่ง message 2 (Zone B)...")
     send_telegram(build_message2(zone_b))
 
     print("✅ เสร็จแล้ว")
