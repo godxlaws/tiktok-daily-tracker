@@ -95,23 +95,36 @@ def fetch_new_products():
 
 
 # ══════════════════════════════════════
-# SCORING
+# HELPERS
 # ══════════════════════════════════════
+
+def get_field(product, *keys, default="?"):
+    """ลอง field หลายชื่อ รองรับ API ต่างโครงสร้าง"""
+    for key in keys:
+        val = product.get(key)
+        if val is not None and val != "":
+            return val
+    return default
+
 
 def days_since(discover_time_str):
     try:
-        dt = datetime.fromisoformat(discover_time_str.replace("Z", ""))
+        dt = datetime.fromisoformat(str(discover_time_str).replace("Z", ""))
         return (datetime.now() - dt).days
     except:
         return 999
 
+
+# ══════════════════════════════════════
+# SCORING
+# ══════════════════════════════════════
 
 def calculate_score(product, source_count):
     score = 0
     reasons = []
 
     # 1. ยอดขาย 1 วัน (35 คะแนน)
-    sold_1d = product.get("soldCount1d", 0) or 0
+    sold_1d = int(get_field(product, "soldCount1d", "soldCount", default=0) or 0)
     if sold_1d >= 500:
         score += 35
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 🔥")
@@ -126,7 +139,8 @@ def calculate_score(product, source_count):
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
 
     # 2. ความใหม่ (30 คะแนน)
-    days = days_since(product.get("discoverTime", ""))
+    discover = get_field(product, "discoverTime", "createTime", "onlineTime", default="")
+    days = days_since(discover)
     if days <= 3:
         score += 30
         reasons.append("ใหม่มาก! เพิ่งเข้า 3 วัน 🆕")
@@ -148,14 +162,14 @@ def calculate_score(product, source_count):
         score += 5
 
     # 4. ราคา (15 คะแนน)
-    price = product.get("localPrice", 0) or 0
+    price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
     if 50 <= price <= 500:
         score += 15
         reasons.append(f"ราคา ฿{price:.0f} ขายง่าย 💰")
-    elif price < 50:
+    elif price < 50 and price > 0:
         score += 8
         reasons.append(f"ราคา ฿{price:.0f} ถูกมาก")
-    else:
+    elif price > 0:
         reasons.append(f"ราคา ฿{price:.0f}")
 
     return min(score, 100), reasons
@@ -184,7 +198,6 @@ def collect_all_products():
         "new":         fetch_new_products(),
     }
 
-    # Debug แต่ละ API
     for name, items in sources.items():
         print(f"{name}: {len(items)} ตัว")
 
@@ -215,9 +228,15 @@ def collect_all_products():
             "zone":    zone_label(score),
         })
 
+    # กรองออกถ้าไม่มีชื่อหรือราคา
+    scored = [
+        x for x in scored
+        if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?" and
+           float(get_field(x["product"], "localPrice", "price", "salePrice", default=0) or 0) > 0
+    ]
+
     scored.sort(key=lambda x: x["score"], reverse=True)
 
-    # Debug zones
     za = [x for x in scored if x["zone"] == "A"]
     zb = [x for x in scored if x["zone"] == "B"]
     zc = [x for x in scored if x["zone"] == "C"]
@@ -234,9 +253,9 @@ def fmt_product_full(rank, item):
     p       = item["product"]
     score   = item["score"]
     reasons = item["reasons"]
-    title   = p.get("itemTitle", "?")[:40]
-    price   = p.get("localPrice", 0) or 0
-    total   = p.get("soldCountTotal", 0) or 0
+    title   = get_field(p, "itemTitle", "title", "name", "goodsName")[:40]
+    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    total   = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
 
     lines = [
         f"\n{rank}. <b>{title}</b>",
@@ -251,9 +270,9 @@ def fmt_product_full(rank, item):
 def fmt_product_short(rank, item):
     p     = item["product"]
     score = item["score"]
-    title = p.get("itemTitle", "?")[:35]
-    price = float(p.get("localPrice", 0) or 0)
-    sold  = int(p.get("soldCount1d", 0) or 0)
+    title = get_field(p, "itemTitle", "title", "name", "goodsName")[:35]
+    price = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    sold  = int(get_field(p, "soldCount1d", "soldCount", "sales", default=0) or 0)
     return f"{rank}. {title}\n   ฿{price:.0f}  เมื่อวาน {sold:,} ชิ้น  [{score}]"
 
 
