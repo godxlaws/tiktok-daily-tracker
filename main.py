@@ -252,8 +252,8 @@ def fmt_product_short(rank, item):
     p     = item["product"]
     score = item["score"]
     title = p.get("itemTitle", "?")[:35]
-    price = p.get("localPrice", 0) or 0
-    sold  = p.get("soldCount1d", 0) or 0
+    price = float(p.get("localPrice", 0) or 0)
+    sold  = int(p.get("soldCount1d", 0) or 0)
     return f"{rank}. {title}\n   ฿{price:.0f}  เมื่อวาน {sold:,} ชิ้น  [{score}]"
 
 
