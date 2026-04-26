@@ -24,7 +24,6 @@ YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 # ══════════════════════════════════════
 
 def fetch_trpc(endpoint, input_dict, pages=10):
-    """ดึงข้อมูลจาก trpc endpoint หลายหน้า"""
     all_items = []
     for page in range(1, pages + 1):
         input_dict["pageNo"] = page
@@ -33,6 +32,7 @@ def fetch_trpc(endpoint, input_dict, pages=10):
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
+                print(f"  HTTP {r.status_code} at page {page}")
                 break
             data = r.json()
             items = (
@@ -42,16 +42,17 @@ def fetch_trpc(endpoint, input_dict, pages=10):
                     .get("data", [])
             )
             if not items:
+                print(f"  ไม่มีข้อมูลที่ page {page}")
                 break
             all_items.extend(items)
         except Exception as e:
-            print(f"Error page {page}: {e}")
+            print(f"  Error page {page}: {e}")
             break
     return all_items
 
 
 def fetch_surge_1d():
-    """เมื่อวานพุ่ง — สัญญาณดีที่สุด"""
+    print("ดึง surge_1d...")
     return fetch_trpc("ranking.goods.hotTrendData", {
         "pageSize": 24,
         "region": "TH",
@@ -61,7 +62,7 @@ def fetch_surge_1d():
 
 
 def fetch_surge_3d():
-    """3 วันพุ่ง — ยังทัน"""
+    print("ดึง surge_3d...")
     return fetch_trpc("ranking.goods.hotTrendData", {
         "pageSize": 24,
         "region": "TH",
@@ -71,7 +72,7 @@ def fetch_surge_3d():
 
 
 def fetch_recommended():
-    """Platform กำลัง push"""
+    print("ดึง recommended...")
     return fetch_trpc("ranking.goods.recommendGoodsRanking", {
         "pageSize": 24,
         "region": "TH",
@@ -83,7 +84,7 @@ def fetch_recommended():
 
 
 def fetch_new_products():
-    """สินค้าใหม่เพิ่งเข้า"""
+    print("ดึง new products...")
     return fetch_trpc("ranking.goods.newGoodsRanking", {
         "pageSize": 24,
         "region": "TH",
@@ -98,7 +99,6 @@ def fetch_new_products():
 # ══════════════════════════════════════
 
 def days_since(discover_time_str):
-    """นับวันที่สินค้าเข้า TikTok Shop"""
     try:
         dt = datetime.fromisoformat(discover_time_str.replace("Z", ""))
         return (datetime.now() - dt).days
@@ -107,21 +107,11 @@ def days_since(discover_time_str):
 
 
 def calculate_score(product, source_count):
-    """
-    คำนวณ score 0-100 สำหรับการตัดสินใจทำคลิป
-    
-    เกณฑ์:
-    - ยอดขายเมื่อวาน (soldCount1d)   → 35 คะแนน
-    - ความใหม่ของสินค้า (discoverTime) → 30 คะแนน
-    - ติดหลาย API                     → 20 คะแนน
-    - ราคาขายง่าย 50-500 บาท         → 15 คะแนน
-    """
     score = 0
     reasons = []
 
-    # 1. ยอดขาย 1 วัน
+    # 1. ยอดขาย 1 วัน (35 คะแนน)
     sold_1d = product.get("soldCount1d", 0) or 0
-    total   = product.get("soldCountTotal", 1) or 1
     if sold_1d >= 500:
         score += 35
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 🔥")
@@ -135,7 +125,7 @@ def calculate_score(product, source_count):
         score += 5
         reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
 
-    # 2. ความใหม่
+    # 2. ความใหม่ (30 คะแนน)
     days = days_since(product.get("discoverTime", ""))
     if days <= 3:
         score += 30
@@ -147,7 +137,7 @@ def calculate_score(product, source_count):
         score += 10
         reasons.append(f"เข้ามา {days} วัน")
 
-    # 3. ติดหลาย API
+    # 3. ติดหลาย API (20 คะแนน)
     if source_count >= 3:
         score += 20
         reasons.append("ติดสัญญาณ 3 แหล่ง ✅")
@@ -157,7 +147,7 @@ def calculate_score(product, source_count):
     else:
         score += 5
 
-    # 4. ราคา
+    # 4. ราคา (15 คะแนน)
     price = product.get("localPrice", 0) or 0
     if 50 <= price <= 500:
         score += 15
@@ -172,9 +162,9 @@ def calculate_score(product, source_count):
 
 
 def zone_label(score):
-    if score >= 70:
+    if score >= 60:
         return "A"
-    elif score >= 45:
+    elif score >= 35:
         return "B"
     else:
         return "C"
@@ -185,7 +175,6 @@ def zone_label(score):
 # ══════════════════════════════════════
 
 def collect_all_products():
-    """รวมสินค้าจากทุก API แล้วคัดกรอง"""
     print("กำลังดึงข้อมูล...")
 
     sources = {
@@ -195,14 +184,13 @@ def collect_all_products():
         "new":         fetch_new_products(),
     }
 
-    print(f"surge_1d: {len(sources['surge_1d'])} ตัว")
-    print(f"surge_3d: {len(sources['surge_3d'])} ตัว")
-    print(f"recommended: {len(sources['recommended'])} ตัว")
-    print(f"new: {len(sources['new'])} ตัว")
+    # Debug แต่ละ API
+    for name, items in sources.items():
+        print(f"{name}: {len(items)} ตัว")
 
-    # รวมและนับว่าแต่ละ item ติด API กี่ตัว
-    item_map   = {}   # itemId → product data
-    item_count = {}   # itemId → จำนวน API ที่ติด
+    # รวมและนับซ้ำ
+    item_map   = {}
+    item_count = {}
 
     for source_name, items in sources.items():
         for item in items:
@@ -213,6 +201,8 @@ def collect_all_products():
                 item_map[iid]   = item
                 item_count[iid] = 0
             item_count[iid] += 1
+
+    print(f"รวม unique: {len(item_map)} ตัว")
 
     # คำนวณ score
     scored = []
@@ -225,8 +215,14 @@ def collect_all_products():
             "zone":    zone_label(score),
         })
 
-    # เรียง score มากสุดก่อน
     scored.sort(key=lambda x: x["score"], reverse=True)
+
+    # Debug zones
+    za = [x for x in scored if x["zone"] == "A"]
+    zb = [x for x in scored if x["zone"] == "B"]
+    zc = [x for x in scored if x["zone"] == "C"]
+    print(f"Zone A: {len(za)}  Zone B: {len(zb)}  Zone C: {len(zc)}")
+
     return scored
 
 
@@ -235,44 +231,46 @@ def collect_all_products():
 # ══════════════════════════════════════
 
 def fmt_product_full(rank, item):
-    """Zone A — แสดงครบพร้อมเหตุผล"""
     p       = item["product"]
     score   = item["score"]
     reasons = item["reasons"]
     title   = p.get("itemTitle", "?")[:40]
-    price   = p.get("localPrice", "?")
-    total   = p.get("soldCountTotal", 0)
+    price   = p.get("localPrice", 0) or 0
+    total   = p.get("soldCountTotal", 0) or 0
 
     lines = [
         f"\n{rank}. <b>{title}</b>",
         f"   💰 ฿{price:.0f}  📦 ยอดรวม {total:,}",
         f"   🎯 Score: {score}/100",
     ]
-    for r in reasons[:2]:  # แสดงแค่ 2 เหตุผลหลัก
+    for r in reasons[:2]:
         lines.append(f"   • {r}")
     return "\n".join(lines)
 
 
 def fmt_product_short(rank, item):
-    """Zone B/C — แสดงสั้นๆ"""
     p     = item["product"]
     score = item["score"]
     title = p.get("itemTitle", "?")[:35]
-    price = p.get("localPrice", "?")
+    price = p.get("localPrice", 0) or 0
     sold  = p.get("soldCount1d", 0) or 0
     return f"{rank}. {title}\n   ฿{price:.0f}  เมื่อวาน {sold:,} ชิ้น  [{score}]"
 
 
 def build_message1(zone_a):
-    """ข้อความที่ 1 — สรุปด่วน Zone A"""
     today_str = datetime.now().strftime("%d/%m/%Y")
     lines = [
         "🟢 <b>ทำเลยวันนี้! Top 5 ปักตะกร้า</b>",
         f"📅 {today_str}",
         "━━━━━━━━━━━━━━━━━━━━",
     ]
-    for i, item in enumerate(zone_a[:5], 1):
-        lines.append(fmt_product_full(i, item))
+
+    if zone_a:
+        for i, item in enumerate(zone_a[:5], 1):
+            lines.append(fmt_product_full(i, item))
+    else:
+        lines.append("\n⚠️ ไม่มีสินค้า Zone A วันนี้")
+
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
         "💡 Score สูง = คู่แข่งน้อย + ตลาดต้องการ",
@@ -282,23 +280,30 @@ def build_message1(zone_a):
 
 
 def build_message2(zone_b, zone_c):
-    """ข้อความที่ 2 — Zone B และ C"""
     lines = [
         "📋 <b>รายการสำรอง</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         "\n🟡 <b>Zone B — ยังทันถ้ารีบ</b>",
         "<i>(คู่แข่งเริ่มมีบ้างแล้ว)</i>",
     ]
-    for i, item in enumerate(zone_b[:10], 1):
-        lines.append(fmt_product_short(i, item))
+
+    if zone_b:
+        for i, item in enumerate(zone_b[:10], 1):
+            lines.append(fmt_product_short(i, item))
+    else:
+        lines.append("  ไม่มีสินค้าใน Zone นี้วันนี้")
 
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
         "\n🔴 <b>Zone C — อ้างอิงเท่านั้น</b>",
         "<i>(ขายดีแล้ว แต่คู่แข่งเยอะ)</i>",
     ]
-    for i, item in enumerate(zone_c[:10], 1):
-        lines.append(fmt_product_short(i, item))
+
+    if zone_c:
+        for i, item in enumerate(zone_c[:10], 1):
+            lines.append(fmt_product_short(i, item))
+    else:
+        lines.append("  ไม่มีสินค้าใน Zone นี้วันนี้")
 
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
@@ -313,7 +318,6 @@ def build_message2(zone_b, zone_c):
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # แบ่งถ้าเกิน 4000 ตัวอักษร
     for chunk in [text[i:i+4000] for i in range(0, len(text), 4000)]:
         requests.post(url, json={
             "chat_id":    CHAT_ID,
@@ -337,9 +341,6 @@ def main():
     zone_b = [x for x in scored if x["zone"] == "B"]
     zone_c = [x for x in scored if x["zone"] == "C"]
 
-    print(f"Zone A: {len(zone_a)}  Zone B: {len(zone_b)}  Zone C: {len(zone_c)}")
-
-    # ส่ง 2 ข้อความ
     send_telegram(build_message1(zone_a))
     send_telegram(build_message2(zone_b, zone_c))
     print("✅ ส่ง Telegram เรียบร้อย")
