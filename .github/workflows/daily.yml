@@ -2,7 +2,7 @@ name: TikTok Daily Tracker
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '35 4 * * *'
   workflow_dispatch:
 
 jobs:
