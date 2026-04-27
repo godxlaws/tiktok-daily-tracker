@@ -2,7 +2,7 @@ name: TikTok Daily Tracker
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # 09:00 น. ไทย
+    - cron: '44 4 * * *'   # 11:44 น. ไทย (04:44 UTC)
   workflow_dispatch:        # กดมือได้
 
 jobs:
