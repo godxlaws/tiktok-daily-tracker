@@ -19,6 +19,7 @@ def require_env(name):
         raise RuntimeError(f"Missing GitHub secret: {name}")
     return value
 
+
 BOT_TOKEN = require_env("BOT_TOKEN")
 CHAT_ID = require_env("CHAT_ID")
 TABCUT_EMAIL = require_env("TABCUT_EMAIL")
@@ -49,8 +50,8 @@ CATEGORY_MAP = {
     "10000": "🛍 อื่นๆ",
 }
 
-# เอาคำสั้นๆ อย่าง "กระ", "ยา", "ขาว", "ฝ้า" ออกแล้ว
-# เพราะมัน match ผิด เช่น กระเป๋า / กระต่าย
+# อย่าใส่คำสั้นๆ เช่น "กระ", "ยา", "ขาว", "ฝ้า"
+# เพราะจะ match ผิด เช่น กระเป๋า / กระต่าย
 RISKY_KEYWORDS = [
     "ลดน้ำหนัก",
     "อาหารเสริม",
@@ -62,6 +63,15 @@ RISKY_KEYWORDS = [
     "fda",
     "ของแท้",
     "casio",
+]
+
+NICHE_KEYWORDS = [
+    "pcx",
+    "click",
+    "adv",
+    "สกรู",
+    "อะไหล่",
+    "มอเตอร์ไซค์",
 ]
 
 # ══════════════════════════════════════
@@ -236,6 +246,10 @@ def get_category(product):
     return CATEGORY_MAP.get(cid, "🛍 อื่นๆ")
 
 
+def get_category_id(product):
+    return str(get_field(product, "categoryId", default=""))
+
+
 def get_title(product, limit=42):
     title = get_field(product, "itemTitle", "title", "name", "goodsName", default="?")
     title = str(title).strip()
@@ -244,6 +258,10 @@ def get_title(product, limit=42):
         title = title[:limit] + "..."
 
     return title
+
+
+def get_full_title(product):
+    return str(get_field(product, "itemTitle", "title", "name", "goodsName", default=""))
 
 
 def get_price(product):
@@ -359,15 +377,27 @@ def get_creator_count(product):
 
 
 def has_risky_keyword(product):
-    title = str(
-        get_field(product, "itemTitle", "title", "name", "goodsName", default="")
-    ).lower()
+    title = get_full_title(product).lower()
 
     for kw in RISKY_KEYWORDS:
         if kw.lower() in title:
             return True
 
     return False
+
+
+def has_niche_keyword(product):
+    title = get_full_title(product).lower()
+
+    for kw in NICHE_KEYWORDS:
+        if kw.lower() in title:
+            return True
+
+    return False
+
+
+def is_food_product(product):
+    return get_category_id(product) in ["7", "9"]
 
 
 def is_valid_product(product):
@@ -472,9 +502,12 @@ def calculate_score(product):
     elif 400 <= price <= 700:
         score += 6
         reasons.append(f"ราคา ฿{price:.0f} ต้องมี demo ชัด")
-    elif 10 <= price < 50:
-        score += 5
-        reasons.append(f"ราคา ฿{price:.0f} ถูกมาก")
+    elif 30 <= price < 50:
+        score += 4
+        reasons.append(f"ราคา ฿{price:.0f} ถูก ต้องเช็คคอม")
+    elif 1 < price < 30:
+        score -= 5
+        reasons.append(f"ราคา ฿{price:.0f} ต่ำมาก ต้องเช็คคอม")
     elif price > 700:
         score += 2
         reasons.append(f"ราคา ฿{price:.0f} สูง ต้องเช็คคอม")
@@ -482,15 +515,23 @@ def calculate_score(product):
         score -= 10
         reasons.append("ราคาแปลก ต้องระวัง")
 
-    # 5) คำเสี่ยง
+    # 5) ลดคะแนนของกลุ่มที่ไม่ควรขึ้น Zone A ง่าย
     if has_risky_keyword(product):
         score -= 12
         reasons.append("มีคำเสี่ยง/แบรนด์/เคลม ต้องระวัง")
 
+    if is_food_product(product):
+        score -= 5
+        reasons.append("สินค้าอาหาร ต้องเช็คร้าน/รีวิวก่อน")
+
+    if has_niche_keyword(product):
+        score -= 5
+        reasons.append("สินค้าเฉพาะกลุ่ม ต้องมี audience ตรง")
+
     return max(0, min(score, 100)), reasons
 
 # ══════════════════════════════════════
-# ACTION
+# ACTION + CONTENT ANGLE
 # ══════════════════════════════════════
 
 def get_action(item):
@@ -507,13 +548,31 @@ def get_action(item):
             "มีคำ/แบรนด์/เคลมที่เสี่ยง ต้องเช็ค policy, รีวิว และอย่าเคลมแรง"
         )
 
-    if score >= 60 and sold_1d >= 100 and v >= 20 and 30 <= price <= 500:
+    if price < 30:
+        return (
+            "🟡 เช็คคอมก่อน",
+            "ราคาต่ำมาก ต้องดูคอมมิชชันและจำนวนคลิปคู่แข่งก่อน ไม่งั้นอาจไม่คุ้มทำ"
+        )
+
+    if is_food_product(p):
+        return (
+            "🟡 เช็คร้าน/รีวิวก่อน",
+            "สินค้าอาหาร ต้องเช็ครีวิว ร้าน วันหมดอายุ และอย่าเคลมเกินจริงก่อนทำ"
+        )
+
+    if has_niche_keyword(p):
+        return (
+            "🟡 ทำถ้ามีกลุ่มเป้าหมาย",
+            "สินค้าเฉพาะกลุ่ม เหมาะทำถ้ามี audience สายนี้หรือทำคอนเทนต์เจาะกลุ่มได้"
+        )
+
+    if score >= 60 and sold_1d >= 100 and v >= 20 and 30 <= price <= 700:
         return (
             "🟢 ทำคลิปเลย",
             "ยอดเมื่อวานดี + Velocity แรง + ราคาเหมาะ รีบทำ demo วันนี้"
         )
 
-    if v >= 30 and sold_1d >= 50 and 10 <= price <= 700:
+    if v >= 30 and sold_1d >= 50 and 30 <= price <= 700:
         return (
             "🟢 ทำคลิปเลย",
             "Velocity สูง แปลว่ามีแรงซื้อใหม่ เหมาะรีบทำก่อนคู่แข่งเยอะ"
@@ -547,6 +606,35 @@ def get_action(item):
         "🟡 เช็คก่อนทำ",
         "มีสัญญาณดี แต่ควรเช็คจำนวนคลิปคู่แข่งและคอมมิชชันก่อน"
     )
+
+
+def get_content_angle(item):
+    p = item["product"]
+    title = get_full_title(p).lower()
+    category_id = get_category_id(p)
+
+    if "แม่เหล็ก" in title or "magsafe" in title:
+        return "🎬 มุมคลิป: ทดลองแรงดูด / ใช้ในรถ / หมุน 360 องศา"
+
+    if category_id == "21":
+        return "🎬 มุมคลิป: demo วิธีใช้ / ก่อนมี-หลังมี / ใช้ในรถหรือโต๊ะทำงาน"
+
+    if category_id == "12":
+        return "🎬 มุมคลิป: แก้ปัญหาในบ้าน / ทดลองใช้จริง / เทียบก่อนหลัง"
+
+    if category_id in ["6", "17", "22", "28", "29"]:
+        return "🎬 มุมคลิป: ใส่จริง / mix & match / ของถูกแต่ดูดี"
+
+    if category_id in ["7", "9"]:
+        return "🎬 มุมคลิป: ชิมจริง / แกะกล่อง / รีวิวรสชาติแบบไม่เคลมเกิน"
+
+    if category_id == "27":
+        return "🎬 มุมคลิป: ติดตั้งจริง / ก่อนแต่ง-หลังแต่ง / เหมาะกับรุ่นไหน"
+
+    if category_id == "20":
+        return "🎬 มุมคลิป: สัตว์เลี้ยงใช้จริง / reaction / ปัญหาที่แก้ได้"
+
+    return "🎬 มุมคลิป: demo ใช้จริงให้เห็นผลภายใน 5 วินาทีแรก"
 
 # ══════════════════════════════════════
 # COLLECT + RANK
@@ -588,6 +676,7 @@ def collect_products():
         action_title, action_reason = get_action(item)
         item["action_title"] = action_title
         item["action_reason"] = action_reason
+        item["content_angle"] = get_content_angle(item)
 
         scored.append(item)
 
@@ -595,7 +684,8 @@ def collect_products():
 
     print(f"ผ่านกรอง: {len(scored)} ตัว")
     return scored
-    # ══════════════════════════════════════
+
+# ══════════════════════════════════════
 # SPLIT ZONES
 # ══════════════════════════════════════
 
@@ -605,7 +695,6 @@ def split_zones(scored):
     Zone B = เช็คก่อนทำ / ทำได้ถ้ามีมุมใหม่
 
     ไม่ฝืนเติม Zone A ให้ครบ 5
-    ถ้ามีตัวทำเลยแค่ 1 ตัว ก็ให้มีแค่ 1 ตัว
     """
     zone_a = []
 
@@ -629,9 +718,13 @@ def split_zones(scored):
         if item["score"] >= 30 or item["velocity"] >= 10 or item["sold_1d"] >= 100:
             zone_b_candidates.append(item)
 
-    # Zone B เน้นตัวที่น่าเช็คที่สุด ไม่ใช่แค่ score อย่างเดียว
+    # Zone B เน้นตัวที่พุ่งเร็วขึ้นก่อน
     zone_b_candidates.sort(
-        key=lambda x: (x["score"], x["velocity"], x["sold_1d"]),
+        key=lambda x: (
+            x["velocity"],
+            x["score"],
+            x["sold_1d"]
+        ),
         reverse=True
     )
 
@@ -684,6 +777,7 @@ def fmt_photo_caption(rank, item, zone_label):
     days = item["days"]
     action_title = item["action_title"]
     action_reason = item["action_reason"]
+    content_angle = item["content_angle"]
 
     lines = [
         f"{zone_label}",
@@ -725,11 +819,12 @@ def fmt_photo_caption(rank, item, zone_label):
     for r in reasons[:2]:
         lines.append(f"• {esc(r)}")
 
-    # ทุกสินค้ามี Action ของตัวเอง
+    # ทุกสินค้ามี Action + มุมคลิป
     lines += [
         "",
         f"🧠 <b>Action: {esc(action_title)}</b>",
         f"• {esc(action_reason)}",
+        esc(content_angle),
     ]
 
     if link:
@@ -873,7 +968,7 @@ def main():
         print("ส่ง Zone A header...")
         send_message(fmt_zone_header(
             "🟢 <b>Zone A — ทำเลยวันนี้</b>",
-            "เฉพาะสินค้าที่ Action เป็น ทำคลิปเลย เท่านั้น"
+            "ตัวที่ควรหยิบไปทำคลิปก่อนวันนี้"
         ))
         time.sleep(2)
 
@@ -891,7 +986,7 @@ def main():
         print("ส่ง Zone B header...")
         send_message(fmt_zone_header(
             "🟡 <b>Zone B — เช็คก่อนทำ</b>",
-            "มีสัญญาณดี แต่ควรเช็คคลิปคู่แข่ง/คอมมิชชัน/ร้านก่อนลงแรง"
+            "ตัวที่มีสัญญาณดี แต่ต้องเช็คคู่แข่ง/คอม/ร้านก่อนลงแรง"
         ))
         time.sleep(2)
 
