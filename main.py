@@ -4,7 +4,7 @@ import json
 import re
 import time
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
@@ -13,17 +13,22 @@ from Crypto.Cipher import PKCS1_OAEP
 # CONFIG
 # ══════════════════════════════════════
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
-TABCUT_EMAIL = os.environ["TABCUT_EMAIL"]
-TABCUT_PASSWORD = os.environ["TABCUT_PASSWORD"]
+def require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing GitHub secret: {name}")
+    return value
+
+BOT_TOKEN = require_env("BOT_TOKEN")
+CHAT_ID = require_env("CHAT_ID")
+TABCUT_EMAIL = require_env("TABCUT_EMAIL")
+TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
 BASE_URL = "https://www.tabcut.com"
 
 ZONE_A_COUNT = 5
 ZONE_B_COUNT = 5
 
-# ใช้ map ให้ตรงกับข้อมูล Tabcut มากขึ้น
 CATEGORY_MAP = {
     "2": "💄 บิวตี้",
     "6": "💍 แฟชั่น/เครื่องประดับ",
@@ -44,20 +49,16 @@ CATEGORY_MAP = {
     "10000": "🛍 อื่นๆ",
 }
 
-# คำที่ควรระวัง ไม่ได้ห้ามขายเสมอไป แต่ไม่ควรดันขึ้น Zone A ง่ายๆ
+# เอาคำสั้นๆ อย่าง "กระ", "ยา", "ขาว", "ฝ้า" ออกแล้ว
+# เพราะมัน match ผิด เช่น กระเป๋า / กระต่าย
 RISKY_KEYWORDS = [
     "ลดน้ำหนัก",
-    "ผอม",
-    "ขาว",
+    "อาหารเสริม",
     "รักษา",
     "แก้ปวด",
     "สิวหาย",
-    "ฝ้า",
-    "กระ",
     "ศีรษะล้าน",
     "ปลูกผม",
-    "ยา",
-    "อาหารเสริม",
     "fda",
     "ของแท้",
     "casio",
@@ -81,7 +82,10 @@ session.headers.update({
 def login():
     print("กำลัง Login Tabcut...")
     try:
-        csrf = session.get(f"{BASE_URL}/api/auth/csrf", timeout=15).json().get("csrfToken")
+        csrf = session.get(
+            f"{BASE_URL}/api/auth/csrf",
+            timeout=15
+        ).json().get("csrfToken")
 
         pub_key_raw = session.get(
             f"{BASE_URL}/api/trpc/user.pubkey?batch=1&input=%7B%7D",
@@ -124,10 +128,6 @@ def login():
 # ══════════════════════════════════════
 
 def fetch_trpc(endpoint, input_dict, max_pages=1):
-    """
-    ฟรีดูได้หน้าแรกหน้าเดียว จึงตั้ง max_pages=1 เป็น default
-    ถ้าวันหลัง account ดูหลายหน้าได้ ค่อยเพิ่ม max_pages
-    """
     all_items = []
     seen_ids = set()
 
@@ -236,20 +236,28 @@ def get_category(product):
     return CATEGORY_MAP.get(cid, "🛍 อื่นๆ")
 
 
-def get_title(product, limit=45):
+def get_title(product, limit=42):
     title = get_field(product, "itemTitle", "title", "name", "goodsName", default="?")
     title = str(title).strip()
+
     if len(title) > limit:
         title = title[:limit] + "..."
+
     return title
 
 
 def get_price(product):
-    return safe_float(get_field(product, "localPrice", "price", "salePrice", default=0), 0)
+    return safe_float(
+        get_field(product, "localPrice", "price", "salePrice", default=0),
+        0
+    )
 
 
 def get_total_sold(product):
-    return safe_int(get_field(product, "soldCountTotal", "totalSold", "soldCount", default=0), 0)
+    return safe_int(
+        get_field(product, "soldCountTotal", "totalSold", "soldCount", default=0),
+        0
+    )
 
 
 def get_sold_1d(product):
@@ -290,8 +298,8 @@ def get_trend_icon(product):
     if avg7 > 0 and sold_1d <= avg7 * 0.7:
         return "📉"
 
-    # ถ้าไม่มี 7d ใช้ velocity แทน
     v = get_velocity(product)
+
     if v >= 30:
         return "🚀"
     if v >= 15:
@@ -325,15 +333,16 @@ def get_image_url(product):
 
 def get_commission(product):
     rate = get_field(product, "commissionRate", default=None)
+
     if rate is None or rate == "?":
         return None
 
     try:
         rate = float(rate)
 
-        # บาง API ส่งมาเป็น 0.15 บางที่อาจส่ง 15
         if rate <= 1:
             return round(rate * 100, 1)
+
         return round(rate, 1)
 
     except:
@@ -342,16 +351,22 @@ def get_commission(product):
 
 def get_creator_count(product):
     info = product.get("relatedCreatorInfo")
+
     if isinstance(info, dict):
         return info.get("total", None)
+
     return None
 
 
 def has_risky_keyword(product):
-    title = str(get_field(product, "itemTitle", "title", "name", "goodsName", default="")).lower()
+    title = str(
+        get_field(product, "itemTitle", "title", "name", "goodsName", default="")
+    ).lower()
+
     for kw in RISKY_KEYWORDS:
         if kw.lower() in title:
             return True
+
     return False
 
 
@@ -361,19 +376,15 @@ def is_valid_product(product):
     sold_1d = get_sold_1d(product)
     total = get_total_sold(product)
 
-    # ไม่มีชื่อ
     if not title or title == "?":
         return False
 
-    # ราคาเพี้ยนมาก
     if price <= 1:
         return False
 
-    # ไม่มีแรงขายเมื่อวาน
     if sold_1d <= 0:
         return False
 
-    # ยอดรวมไม่มีเลย แปลก
     if total <= 0:
         return False
 
@@ -384,18 +395,15 @@ def is_valid_product(product):
 # ══════════════════════════════════════
 
 def calculate_score(product):
-    """
-    ใช้กับ Yesterday surge อย่างเดียว
-    เน้นหาของที่เพิ่งพุ่ง ไม่ใช่ของที่ขายดีมานานแล้ว
-    """
     score = 0
     reasons = []
 
     sold_1d = get_sold_1d(product)
-    total = get_total_sold(product)
     price = get_price(product)
     velocity = get_velocity(product)
-    days = days_since(get_field(product, "discoverTime", "createTime", "onlineTime", default=""))
+    days = days_since(
+        get_field(product, "discoverTime", "createTime", "onlineTime", default="")
+    )
 
     # 1) ยอดขายเมื่อวาน
     if sold_1d >= 1000:
@@ -417,7 +425,7 @@ def calculate_score(product):
         score += 5
         reasons.append(f"เมื่อวานขาย {sold_1d:,} ชิ้น")
 
-    # 2) Velocity = ยอดเมื่อวาน / ยอดรวม
+    # 2) Velocity
     if velocity >= 50:
         score += 30
         reasons.append(f"Velocity {velocity}% เพิ่งระเบิดมาก")
@@ -451,7 +459,6 @@ def calculate_score(product):
         score += 4
         reasons.append(f"เข้า {days} วัน")
     else:
-        # ของเก่าไม่ใช่แย่ แต่ต้องไม่ให้ขึ้นง่ายเกินไป
         if velocity >= 30:
             score += 5
             reasons.append("สินค้าเก่าแต่กลับมาพุ่งแรง")
@@ -475,7 +482,7 @@ def calculate_score(product):
         score -= 10
         reasons.append("ราคาแปลก ต้องระวัง")
 
-    # 5) ลดคะแนนของเสี่ยง
+    # 5) คำเสี่ยง
     if has_risky_keyword(product):
         score -= 12
         reasons.append("มีคำเสี่ยง/แบรนด์/เคลม ต้องระวัง")
@@ -487,30 +494,26 @@ def calculate_score(product):
 # ══════════════════════════════════════
 
 def get_action(item):
-    """
-    ทุกสินค้าต้องมี Action ของตัวเอง
-    """
     p = item["product"]
     score = item["score"]
     v = item["velocity"]
     sold_1d = item["sold_1d"]
     price = get_price(p)
     days = item["days"]
-    risky = has_risky_keyword(p)
 
-    if risky:
+    if has_risky_keyword(p):
         return (
             "🟡 เช็คก่อนทำ",
-            "มีคำ/หมวดที่เสี่ยง ต้องเช็ค policy, รีวิว, ร้าน และอย่าเคลมแรง"
+            "มีคำ/แบรนด์/เคลมที่เสี่ยง ต้องเช็ค policy, รีวิว และอย่าเคลมแรง"
         )
 
-    if score >= 75 and sold_1d >= 100 and v >= 20 and 30 <= price <= 500:
+    if score >= 60 and sold_1d >= 100 and v >= 20 and 30 <= price <= 500:
         return (
             "🟢 ทำคลิปเลย",
-            "สัญญาณแรงพอ ยอดเมื่อวานดี ราคาเหมาะ ทำ demo/ปัญหา-ทางแก้วันนี้"
+            "ยอดเมื่อวานดี + Velocity แรง + ราคาเหมาะ รีบทำ demo วันนี้"
         )
 
-    if v >= 30 and sold_1d >= 50:
+    if v >= 30 and sold_1d >= 50 and 10 <= price <= 700:
         return (
             "🟢 ทำคลิปเลย",
             "Velocity สูง แปลว่ามีแรงซื้อใหม่ เหมาะรีบทำก่อนคู่แข่งเยอะ"
@@ -519,19 +522,19 @@ def get_action(item):
     if sold_1d >= 500 and v < 10:
         return (
             "🟡 เช็คคู่แข่งก่อน",
-            "ขายเยอะจริง แต่ยอดรวมสูง อาจเป็นของที่คนทำเยอะแล้ว"
+            "ขายเยอะจริง แต่ยอดรวมสูง อาจเป็นสินค้าที่คนทำเยอะแล้ว"
         )
 
     if days > 180 and v < 20:
         return (
             "🟡 ทำได้ถ้ามีมุมใหม่",
-            "สินค้าเก่า ต้องหา angle ใหม่ เช่น เทียบก่อน-หลัง, วิธีใช้, ข้อผิดพลาด"
+            "สินค้าเก่า ต้องหา angle ใหม่ เช่น วิธีใช้ เทียบก่อนหลัง หรือปัญหาที่แก้ได้"
         )
 
     if price > 700:
         return (
             "🟡 เช็คคอม/ร้านก่อน",
-            "ราคาสูง ต้องดูคอมมิชชัน รีวิว และความน่าเชื่อถือก่อนลงแรง"
+            "ราคาสูง ต้องเช็คคอมมิชชัน รีวิว และความน่าเชื่อถือร้านก่อน"
         )
 
     if sold_1d < 100 and v >= 20:
@@ -561,7 +564,9 @@ def collect_products():
             continue
 
         score, reasons = calculate_score(product)
-        days = days_since(get_field(product, "discoverTime", "createTime", "onlineTime", default=""))
+        days = days_since(
+            get_field(product, "discoverTime", "createTime", "onlineTime", default="")
+        )
 
         item = {
             "product": product,
@@ -590,14 +595,17 @@ def collect_products():
 
     print(f"ผ่านกรอง: {len(scored)} ตัว")
     return scored
-
+    # ══════════════════════════════════════
+# SPLIT ZONES
+# ══════════════════════════════════════
 
 def split_zones(scored):
     """
-    Zone A = ทำเลยวันนี้
-    Zone B = เช็คก่อนทำ แต่ยังน่าสนใจ
+    Zone A = ทำคลิปเลยจริงๆ เท่านั้น
+    Zone B = เช็คก่อนทำ / ทำได้ถ้ามีมุมใหม่
 
-    ไม่มี Zone C ใน report
+    ไม่ฝืนเติม Zone A ให้ครบ 5
+    ถ้ามีตัวทำเลยแค่ 1 ตัว ก็ให้มีแค่ 1 ตัว
     """
     zone_a = []
 
@@ -605,43 +613,28 @@ def split_zones(scored):
         if len(zone_a) >= ZONE_A_COUNT:
             break
 
-        p = item["product"]
-        price = get_price(p)
-
-        # เงื่อนไข Zone A ต้องค่อนข้างชัด
-        if (
-            item["score"] >= 65
-            and item["sold_1d"] >= 80
-            and item["velocity"] >= 10
-            and 10 <= price <= 700
-            and not has_risky_keyword(p)
-        ):
+        if item["action_title"].startswith("🟢"):
             zone_a.append(item)
 
-    # ถ้าเงื่อนไขเข้มไปจนไม่ครบ ให้เอา top score มาเติม
     used_ids = set(x["product"].get("itemId") for x in zone_a)
 
-    for item in scored:
-        if len(zone_a) >= ZONE_A_COUNT:
-            break
-
-        iid = item["product"].get("itemId")
-        if iid not in used_ids and not has_risky_keyword(item["product"]):
-            zone_a.append(item)
-            used_ids.add(iid)
-
-    # Zone B เอาตัวที่เหลือที่ยังน่าเช็ค
     zone_b_candidates = []
+
     for item in scored:
         iid = item["product"].get("itemId")
+
         if iid in used_ids:
             continue
 
-        if item["score"] >= 45 or item["velocity"] >= 15 or item["sold_1d"] >= 100:
+        if item["score"] >= 30 or item["velocity"] >= 10 or item["sold_1d"] >= 100:
             zone_b_candidates.append(item)
 
-    # เรียง Zone B โดยเน้น velocity ก่อน แล้วค่อย score
-    zone_b_candidates.sort(key=lambda x: (x["velocity"], x["score"]), reverse=True)
+    # Zone B เน้นตัวที่น่าเช็คที่สุด ไม่ใช่แค่ score อย่างเดียว
+    zone_b_candidates.sort(
+        key=lambda x: (x["score"], x["velocity"], x["sold_1d"]),
+        reverse=True
+    )
+
     zone_b = zone_b_candidates[:ZONE_B_COUNT]
 
     print(f"Zone A: {len(zone_a)} ตัว")
@@ -700,10 +693,13 @@ def fmt_photo_caption(rank, item, zone_label):
     ]
 
     trend_line = f"📊 {trend_icon} เมื่อวาน:{sold_1d:,}"
+
     if sold_3d > 0:
         trend_line += f"  3วัน:{sold_3d:,}"
+
     if sold_7d > 0:
         trend_line += f"  7วัน:{sold_7d:,}"
+
     lines.append(trend_line)
 
     lines.append(f"⚡ {vel_bar(v)} {v}%")
@@ -725,11 +721,11 @@ def fmt_photo_caption(rank, item, zone_label):
         else:
             lines.append(f"👥 Creator: {creator_cnt} คน 🔴 คู่แข่งเยอะ")
 
-    # เหตุผลสั้นๆ เอาแค่ 1-2 บรรทัดพอ ไม่ให้ caption เกิน 1024
+    # เหตุผลสั้นๆ พอ กัน caption ยาวเกิน
     for r in reasons[:2]:
         lines.append(f"• {esc(r)}")
 
-    # สำคัญ: ทุกสินค้ามี Action ของตัวเอง
+    # ทุกสินค้ามี Action ของตัวเอง
     lines += [
         "",
         f"🧠 <b>Action: {esc(action_title)}</b>",
@@ -744,7 +740,21 @@ def fmt_photo_caption(rank, item, zone_label):
 
 def html_to_plain(text):
     text = re.sub(r'<a href="([^"]+)">([^<]+)</a>', r'\2: \1', text)
-    return re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    return text
+
+
+def safe_caption(text, limit=900):
+    """
+    Telegram photo caption จำกัด 1024 ตัว
+    ใช้ 900 กัน HTML tag โดนตัดกลาง
+    ถ้ายาวเกิน จะส่งเป็น plain text แทน
+    """
+    if len(text) <= limit:
+        return text
+
+    plain = html_to_plain(text)
+    return plain[:limit] + "\n\n...ตัดข้อความบางส่วน"
 
 # ══════════════════════════════════════
 # SEND TELEGRAM
@@ -753,7 +763,7 @@ def html_to_plain(text):
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
+    chunks = [text[i:i+3000] for i in range(0, len(text), 3000)]
 
     for idx, chunk in enumerate(chunks):
         try:
@@ -765,23 +775,27 @@ def send_message(text):
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
                 },
-                timeout=15
+                timeout=20
             )
 
             print(f"msg {idx + 1}: {r.status_code}")
+            print(r.text[:300])
 
             if r.status_code != 200:
-                print(r.text[:300])
+                plain = html_to_plain(chunk)
+
                 r2 = requests.post(
                     url,
                     json={
                         "chat_id": CHAT_ID,
-                        "text": html_to_plain(chunk),
+                        "text": plain,
                         "disable_web_page_preview": True,
                     },
-                    timeout=15
+                    timeout=20
                 )
-                print(f"plain: {r2.status_code}")
+
+                print(f"plain msg {idx + 1}: {r2.status_code}")
+                print(r2.text[:300])
 
         except Exception as e:
             print(f"Exception send_message: {e}")
@@ -791,9 +805,7 @@ def send_message(text):
 
 def send_photo(image_url, caption):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-
-    # Telegram photo caption จำกัด 1024 ตัวอักษร
-    caption = caption[:1000]
+    safe_cap = safe_caption(caption)
 
     try:
         r = requests.post(
@@ -801,21 +813,21 @@ def send_photo(image_url, caption):
             json={
                 "chat_id": CHAT_ID,
                 "photo": image_url,
-                "caption": caption,
+                "caption": safe_cap,
                 "parse_mode": "HTML",
             },
-            timeout=15
+            timeout=20
         )
 
         print(f"photo: {r.status_code}")
+        print(r.text[:300])
 
         if r.status_code != 200:
-            print(r.text[:300])
-            send_message(caption)
+            send_message(html_to_plain(caption))
 
     except Exception as e:
         print(f"Photo error: {e}")
-        send_message(caption)
+        send_message(html_to_plain(caption))
 
 # ══════════════════════════════════════
 # MAIN
@@ -861,13 +873,17 @@ def main():
         print("ส่ง Zone A header...")
         send_message(fmt_zone_header(
             "🟢 <b>Zone A — ทำเลยวันนี้</b>",
-            "สินค้าที่สัญญาณแรง เหมาะหยิบไปทำคลิปก่อน"
+            "เฉพาะสินค้าที่ Action เป็น ทำคลิปเลย เท่านั้น"
         ))
         time.sleep(2)
 
         send_zone_items(zone_a, "🟢 <b>Zone A — ทำเลยวันนี้</b>")
     else:
-        send_message("🟢 <b>Zone A — ทำเลยวันนี้</b>\nวันนี้ยังไม่มีตัวที่เข้าเกณฑ์ชัด")
+        send_message(
+            "🟢 <b>Zone A — ทำเลยวันนี้</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "วันนี้ยังไม่มีตัวที่แรงพอให้ทำทันที"
+        )
 
     time.sleep(2)
 
@@ -881,7 +897,11 @@ def main():
 
         send_zone_items(zone_b, "🟡 <b>Zone B — เช็คก่อนทำ</b>")
     else:
-        send_message("🟡 <b>Zone B — เช็คก่อนทำ</b>\nวันนี้ไม่มีตัวสำรองที่น่าสนใจ")
+        send_message(
+            "🟡 <b>Zone B — เช็คก่อนทำ</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "วันนี้ไม่มีตัวสำรองที่น่าสนใจ"
+        )
 
     print("✅ ส่ง report เสร็จแล้ว")
 
