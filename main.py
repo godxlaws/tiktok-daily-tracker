@@ -3,18 +3,21 @@ import os
 import json
 import re
 import time
+import base64
 from datetime import datetime, timedelta
 from urllib.parse import quote
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID   = os.environ["CHAT_ID"]
+# ══════════════════════════════════════
+# CONFIG — อ่านจาก GitHub Secrets ทั้งหมด
+# ══════════════════════════════════════
+BOT_TOKEN        = os.environ["BOT_TOKEN"]
+CHAT_ID          = os.environ["CHAT_ID"]
+TABCUT_EMAIL     = os.environ["TABCUT_EMAIL"]
+TABCUT_PASSWORD  = os.environ["TABCUT_PASSWORD"]
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0",
-    "Referer": "https://www.tabcut.com/",
-    "Accept": "application/json",
-}
-
+BASE_URL  = "https://www.tabcut.com"
 TODAY     = datetime.now().strftime("%Y%m%d")
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
@@ -36,35 +39,120 @@ CATEGORY_MAP = {
 }
 
 # ══════════════════════════════════════
-# FETCH
+# SESSION — ใช้ร่วมกันทั้งหมด
+# ══════════════════════════════════════
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": f"{BASE_URL}/workbench",
+})
+
+# ══════════════════════════════════════
+# LOGIN
 # ══════════════════════════════════════
 
-def fetch_trpc(endpoint, input_dict, pages=20):
-    all_items = []
-    for page in range(1, pages + 1):
+def get_csrf_token():
+    res = session.get(f"{BASE_URL}/api/auth/csrf", timeout=15)
+    return res.json().get("csrfToken")
+
+def get_public_key():
+    url = f"{BASE_URL}/api/trpc/user.pubkey?batch=1&input=%7B%7D"
+    res = session.get(url, timeout=15)
+    return res.json()[0]["result"]["data"]
+
+def encrypt_password(pub_key_str, raw_password):
+    if "BEGIN PUBLIC KEY" not in pub_key_str:
+        pub_key_str = f"-----BEGIN PUBLIC KEY-----\n{pub_key_str}\n-----END PUBLIC KEY-----"
+    key = RSA.importKey(pub_key_str)
+    cipher = PKCS1_OAEP.new(key)
+    encrypted = cipher.encrypt(raw_password.encode("utf-8"))
+    return base64.b64encode(encrypted).decode("utf-8")
+
+def login():
+    print("กำลัง Login Tabcut...")
+    try:
+        csrf    = get_csrf_token()
+        pub_key = get_public_key()
+        enc_pw  = encrypt_password(pub_key, TABCUT_PASSWORD)
+
+        res = session.post(
+            f"{BASE_URL}/api/auth/callback/email?",
+            data={
+                "email":       TABCUT_EMAIL,
+                "password":    enc_pw,
+                "csrfToken":   csrf,
+                "callbackUrl": f"{BASE_URL}/workbench",
+                "redirect":    "false",
+                "json":        "true",
+            },
+            timeout=15,
+        )
+        if res.status_code == 200:
+            print("✅ Login สำเร็จ!")
+            return True
+        else:
+            print(f"❌ Login ล้มเหลว: {res.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ Login Error: {e}")
+        return False
+
+
+# ══════════════════════════════════════
+# FETCH — Smart Page Detection
+# หยุดดึงเมื่อ: ไม่มีข้อมูล / ข้อมูลซ้ำกับหน้าก่อน
+# ══════════════════════════════════════
+
+def fetch_trpc(endpoint, input_dict, max_pages=20):
+    all_items  = []
+    seen_ids   = set()
+    empty_count = 0
+
+    for page in range(1, max_pages + 1):
         input_dict["pageNo"] = page
-        encoded = quote(json.dumps(input_dict, ensure_ascii=False))
-        url = f"https://www.tabcut.com/api/trpc/{endpoint}?input={encoded}"
+        encoded = quote(json.dumps(input_dict, separators=(",", ":")))
+        url = f"{BASE_URL}/api/trpc/{endpoint}?input={encoded}"
+
         try:
-            r = requests.get(url, headers=HEADERS, timeout=15)
-            if r.status_code != 200:
-                print(f"  HTTP {r.status_code} at page {page}")
+            res = session.get(url, timeout=15)
+            if res.status_code != 200:
+                print(f"  HTTP {res.status_code} หน้า {page}")
                 break
-            data = r.json()
+
+            data  = res.json()
             items = (
                 data.get("result", {})
                     .get("data", {})
                     .get("result", {})
                     .get("data", [])
             )
+
             if not items:
-                print(f"  หมดข้อมูลที่ page {page}")
+                empty_count += 1
+                print(f"  หน้า {page}: ว่างเปล่า (ครั้งที่ {empty_count})")
+                if empty_count >= 2:
+                    print(f"  หยุดดึง — ไม่มีข้อมูลเพิ่ม")
+                    break
+                continue
+
+            # เช็คว่ามีสินค้าใหม่ไหม
+            new_items = [i for i in items if i.get("itemId") not in seen_ids]
+            if not new_items:
+                print(f"  หน้า {page}: ข้อมูลซ้ำทั้งหมด หยุดดึง")
                 break
-            all_items.extend(items)
+
+            for i in new_items:
+                seen_ids.add(i.get("itemId"))
+            all_items.extend(new_items)
+            print(f"  หน้า {page}: +{len(new_items)} ตัว (รวม {len(all_items)})")
+            empty_count = 0
             time.sleep(0.3)
+
         except Exception as e:
-            print(f"  Error page {page}: {e}")
+            print(f"  Error หน้า {page}: {e}")
             break
+
     return all_items
 
 
@@ -104,12 +192,7 @@ def fetch_new_products():
 # ══════════════════════════════════════
 
 def esc(text):
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return str(text).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
 def get_field(product, *keys, default="?"):
     for key in keys:
@@ -118,9 +201,9 @@ def get_field(product, *keys, default="?"):
             return val
     return default
 
-def days_since(discover_time_str):
+def days_since(s):
     try:
-        dt = datetime.fromisoformat(str(discover_time_str).replace("Z", ""))
+        dt = datetime.fromisoformat(str(s).replace("Z",""))
         return (datetime.now() - dt).days
     except:
         return 999
@@ -130,11 +213,9 @@ def get_category(product):
     return CATEGORY_MAP.get(cat_id, "🛍 อื่นๆ")
 
 def get_velocity(product):
-    sold_1d    = int(get_field(product, "soldCount1d", default=0) or 0)
-    sold_total = int(get_field(product, "soldCountTotal", default=0) or 0)
-    if sold_total > 0 and sold_1d > 0:
-        return round((sold_1d / sold_total) * 100, 1)
-    return 0.0
+    s1 = int(get_field(product, "soldCount1d", default=0) or 0)
+    st = int(get_field(product, "soldCountTotal", default=0) or 0)
+    return round((s1/st)*100, 1) if st > 0 and s1 > 0 else 0.0
 
 def vel_icon(v):
     if v >= 50: return "🔴"
@@ -151,10 +232,8 @@ def vel_bar(v):
     return "⚫⚫⚫⚫⚫"
 
 def get_shop_link(product):
-    item_id = get_field(product, "itemId", default="")
-    if item_id and item_id != "?":
-        return f"https://www.tiktok.com/view/product/{item_id}"
-    return ""
+    iid = get_field(product, "itemId", default="")
+    return f"https://www.tiktok.com/view/product/{iid}" if iid != "?" else ""
 
 def get_image_url(product):
     return get_field(product, "itemPicUrl", "picUrl", "imageUrl", default="")
@@ -170,71 +249,35 @@ def get_image_url(product):
 # ══════════════════════════════════════
 
 def calculate_score(product, source_count):
-    score = 0
-    reasons = []
+    score, reasons = 0, []
 
     sold_1d = int(get_field(product, "soldCount1d", "soldCount", default=0) or 0)
-    if sold_1d >= 500:
-        score += 30
-        reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 🔥")
-    elif sold_1d >= 200:
-        score += 22
-        reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 📈")
-    elif sold_1d >= 50:
-        score += 13
-        reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
-    elif sold_1d > 0:
-        score += 5
-        reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
+    if sold_1d >= 500:   score += 30; reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 🔥")
+    elif sold_1d >= 200: score += 22; reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น 📈")
+    elif sold_1d >= 50:  score += 13; reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
+    elif sold_1d > 0:    score += 5;  reasons.append(f"ขายเมื่อวาน {sold_1d:,} ชิ้น")
 
     discover = get_field(product, "discoverTime", "createTime", "onlineTime", default="")
     days = days_since(discover)
-    if days <= 3:
-        score += 25
-        reasons.append("ใหม่มาก! เพิ่งเข้า 3 วัน 🆕")
-    elif days <= 7:
-        score += 18
-        reasons.append(f"ใหม่ {days} วัน")
-    elif days <= 14:
-        score += 10
-        reasons.append(f"เข้ามา {days} วัน")
-    elif days <= 30:
-        score += 4
-        reasons.append(f"เข้ามา {days} วัน")
+    if days <= 3:   score += 25; reasons.append("ใหม่มาก! เพิ่งเข้า 3 วัน 🆕")
+    elif days <= 7:  score += 18; reasons.append(f"ใหม่ {days} วัน")
+    elif days <= 14: score += 10; reasons.append(f"เข้ามา {days} วัน")
+    elif days <= 30: score += 4;  reasons.append(f"เข้ามา {days} วัน")
 
-    velocity = get_velocity(product)
-    if velocity >= 50:
-        score += 20
-        reasons.append(f"Velocity {velocity}% เพิ่งระเบิดตัว!")
-    elif velocity >= 20:
-        score += 14
-        reasons.append(f"Velocity {velocity}% กำลังพุ่ง")
-    elif velocity >= 10:
-        score += 8
-        reasons.append(f"Velocity {velocity}%")
-    elif velocity > 0:
-        score += 3
-        reasons.append(f"Velocity {velocity}%")
+    v = get_velocity(product)
+    if v >= 50:   score += 20; reasons.append(f"Velocity {v}% เพิ่งระเบิดตัว!")
+    elif v >= 20: score += 14; reasons.append(f"Velocity {v}% กำลังพุ่ง")
+    elif v >= 10: score += 8;  reasons.append(f"Velocity {v}%")
+    elif v > 0:   score += 3;  reasons.append(f"Velocity {v}%")
 
-    if source_count >= 3:
-        score += 15
-        reasons.append("ติดสัญญาณ 3+ แหล่ง")
-    elif source_count == 2:
-        score += 9
-        reasons.append("ติดสัญญาณ 2 แหล่ง")
-    else:
-        score += 3
+    if source_count >= 3:   score += 15; reasons.append("ติดสัญญาณ 3+ แหล่ง")
+    elif source_count == 2: score += 9;  reasons.append("ติดสัญญาณ 2 แหล่ง")
+    else:                   score += 3
 
     price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
-    if 50 <= price <= 500:
-        score += 10
-        reasons.append(f"ราคา {price:.0f} บาท ขายง่าย")
-    elif 0 < price < 50:
-        score += 6
-        reasons.append(f"ราคา {price:.0f} บาท ถูกมาก")
-    elif price > 500:
-        score += 3
-        reasons.append(f"ราคา {price:.0f} บาท สูงหน่อย")
+    if 50 <= price <= 500:  score += 10; reasons.append(f"ราคา {price:.0f} บาท ขายง่าย")
+    elif 0 < price < 50:   score += 6;  reasons.append(f"ราคา {price:.0f} บาท ถูกมาก")
+    elif price > 500:       score += 3;  reasons.append(f"ราคา {price:.0f} บาท สูงหน่อย")
 
     return min(score, 100), reasons
 
@@ -254,13 +297,11 @@ def collect_all_products():
     for name, items in sources.items():
         print(f"{name}: {len(items)} ตัว")
 
-    item_map   = {}
-    item_count = {}
+    item_map, item_count = {}, {}
     for source_name, items in sources.items():
         for item in items:
             iid = item.get("itemId")
-            if not iid:
-                continue
+            if not iid: continue
             if iid not in item_map:
                 item_map[iid]   = item
                 item_count[iid] = 0
@@ -286,76 +327,16 @@ def collect_all_products():
         if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?" and
            float(get_field(x["product"], "localPrice", "price", "salePrice", default=0) or 0) > 0
     ]
-
     scored.sort(key=lambda x: x["score"], reverse=True)
     print(f"ผ่านกรอง: {len(scored)} ตัว")
     return scored
 
 
 def split_zones(scored):
-    zone_a = scored[:ZONE_A_COUNT]
-    zone_b = scored[ZONE_A_COUNT:ZONE_A_COUNT + ZONE_B_COUNT]
-    print(f"Zone A: {len(zone_a)}  Zone B: {len(zone_b)}")
-    return zone_a, zone_b
-
-
-# ══════════════════════════════════════
-# SEND TELEGRAM
-# ══════════════════════════════════════
-
-def html_to_plain(text):
-    """แปลง HTML เป็น plain text โดยเก็บ URL ไว้"""
-    # แทน <a href="url">text</a> ด้วย text: url
-    text = re.sub(r'<a href="([^"]+)">([^<]+)</a>', r'\2: \1', text)
-    # ลบ tag อื่นๆ
-    text = re.sub(r'<[^>]+>', '', text)
-    return text
-
-
-def send_message(text):
-    """ส่งข้อความ ถ้า HTML fail จะ fallback plain text"""
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
-    for idx, chunk in enumerate(chunks):
-        try:
-            r = requests.post(url, json={
-                "chat_id":    CHAT_ID,
-                "text":       chunk,
-                "parse_mode": "HTML",
-            }, timeout=15)
-            print(f"  message chunk {idx+1}: {r.status_code}")
-            if r.status_code != 200:
-                print(f"  HTML fail: {r.text[:100]}")
-                print(f"  ลอง plain text...")
-                plain = html_to_plain(chunk)
-                r2 = requests.post(url, json={
-                    "chat_id": CHAT_ID,
-                    "text":    plain,
-                }, timeout=15)
-                print(f"  plain: {r2.status_code}")
-        except Exception as e:
-            print(f"  Exception: {e}")
-        time.sleep(1)
-
-
-def send_photo(image_url, caption):
-    """ส่งรูปพร้อม caption"""
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    caption = caption[:1024]
-    try:
-        r = requests.post(url, json={
-            "chat_id":    CHAT_ID,
-            "photo":      image_url,
-            "caption":    caption,
-            "parse_mode": "HTML",
-        }, timeout=15)
-        print(f"  photo: {r.status_code}")
-        if r.status_code != 200:
-            print(f"  Photo fail ส่งเป็นข้อความแทน")
-            send_message(caption)
-    except Exception as e:
-        print(f"  Photo exception: {e}")
-        send_message(caption)
+    za = scored[:ZONE_A_COUNT]
+    zb = scored[ZONE_A_COUNT:ZONE_A_COUNT + ZONE_B_COUNT]
+    print(f"Zone A: {len(za)}  Zone B: {len(zb)}")
+    return za, zb
 
 
 # ══════════════════════════════════════
@@ -370,19 +351,17 @@ def fmt_zone_a_header(today_str):
         "<i>Velocity = % ขายเมื่อวาน/ยอดรวม | สูง=เพิ่งระเบิด!</i>"
     )
 
-
 def fmt_photo_caption(rank, item):
-    """Caption สำหรับรูป Zone A (max 1024 ตัวอักษร)"""
-    p         = item["product"]
-    score     = item["score"]
-    reasons   = item["reasons"]
-    cat       = item["category"]
-    v         = item["velocity"]
-    shop_link = item["shop_link"]
-    title     = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:45])
-    price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    total     = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
-    sold_1d   = int(get_field(p, "soldCount1d", default=0) or 0)
+    p       = item["product"]
+    score   = item["score"]
+    reasons = item["reasons"]
+    cat     = item["category"]
+    v       = item["velocity"]
+    link    = item["shop_link"]
+    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:45])
+    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    total   = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
+    sold_1d = int(get_field(p, "soldCount1d", default=0) or 0)
 
     lines = [
         f"{rank}. <b>{title}</b>",
@@ -393,31 +372,25 @@ def fmt_photo_caption(rank, item):
     ]
     for r in reasons[:2]:
         lines.append(f"• {esc(r)}")
-    if shop_link:
-        lines.append(f"\n🛒 <a href=\"{shop_link}\">ดูสินค้าใน TikTok Shop</a>")
-
+    if link:
+        lines.append(f"\n🛒 <a href=\"{link}\">ดูสินค้าใน TikTok Shop</a>")
     return "\n".join(lines)
-
 
 def fmt_product_short(rank, item):
-    """Zone B — แสดงสั้นๆ พร้อมลิงก์"""
-    p         = item["product"]
-    score     = item["score"]
-    cat       = item["category"]
-    v         = item["velocity"]
-    shop_link = item["shop_link"]
-    title     = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
-    price     = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    sold_1d   = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
-
-    lines = [
-        f"\n{rank}. {title}",
-        f"   {cat}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  {vel_icon(v)}{v}%  [{score}]",
-    ]
-    if shop_link:
-        lines.append(f"   🛒 <a href=\"{shop_link}\">ดูใน TikTok Shop</a>")
-    return "\n".join(lines)
-
+    p       = item["product"]
+    score   = item["score"]
+    cat     = item["category"]
+    v       = item["velocity"]
+    link    = item["shop_link"]
+    title   = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
+    price   = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    sold_1d = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
+    link_text = f"\n   🛒 <a href=\"{link}\">ดูใน TikTok Shop</a>" if link else ""
+    return (
+        f"\n{rank}. {title}\n"
+        f"   {cat}  ฿{price:.0f}  เมื่อวาน {sold_1d:,}  {vel_icon(v)}{v}%  [{score}]"
+        f"{link_text}"
+    )
 
 def build_message2(zone_b):
     lines = [
@@ -438,12 +411,55 @@ def build_message2(zone_b):
 
 
 # ══════════════════════════════════════
+# SEND TELEGRAM
+# ══════════════════════════════════════
+
+def html_to_plain(text):
+    text = re.sub(r'<a href="([^"]+)">([^<]+)</a>', r'\2: \1', text)
+    return re.sub(r'<[^>]+>', '', text)
+
+def send_message(text):
+    url    = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
+    for idx, chunk in enumerate(chunks):
+        try:
+            r = requests.post(url, json={
+                "chat_id": CHAT_ID, "text": chunk, "parse_mode": "HTML",
+            }, timeout=15)
+            print(f"  msg chunk {idx+1}: {r.status_code}")
+            if r.status_code != 200:
+                r2 = requests.post(url, json={
+                    "chat_id": CHAT_ID, "text": html_to_plain(chunk),
+                }, timeout=15)
+                print(f"  plain: {r2.status_code}")
+        except Exception as e:
+            print(f"  Exception: {e}")
+        time.sleep(1)
+
+def send_photo(image_url, caption):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    try:
+        r = requests.post(url, json={
+            "chat_id": CHAT_ID, "photo": image_url,
+            "caption": caption[:1024], "parse_mode": "HTML",
+        }, timeout=15)
+        print(f"  photo: {r.status_code}")
+        if r.status_code != 200:
+            send_message(caption)
+    except Exception as e:
+        print(f"  Photo error: {e}")
+        send_message(caption)
+
+
+# ══════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════
 
 def main():
-    scored = collect_all_products()
+    # Login ก่อน
+    login()
 
+    scored = collect_all_products()
     if not scored:
         send_message("⚠️ ดึงข้อมูลไม่ได้วันนี้ ลองใหม่พรุ่งนี้")
         return
@@ -451,27 +467,23 @@ def main():
     zone_a, zone_b = split_zones(scored)
     today_str = datetime.now().strftime("%d/%m/%Y")
 
-    # Header
     print("ส่ง Zone A header...")
     send_message(fmt_zone_a_header(today_str))
     time.sleep(2)
 
-    # Zone A — ส่งทีละสินค้าเป็นรูป
     for i, item in enumerate(zone_a, 1):
         print(f"ส่ง Zone A อันดับ {i}...")
-        caption   = fmt_photo_caption(i, item)
-        image_url = item["image_url"]
-        if image_url and image_url != "?":
-            send_photo(image_url, caption)
+        img = item["image_url"]
+        cap = fmt_photo_caption(i, item)
+        if img and img != "?":
+            send_photo(img, cap)
         else:
-            send_message(caption)
+            send_message(cap)
         time.sleep(2)
 
-    # Zone B
     print("ส่ง Zone B...")
     time.sleep(2)
     send_message(build_message2(zone_b))
-
     print("✅ เสร็จแล้ว")
 
 
