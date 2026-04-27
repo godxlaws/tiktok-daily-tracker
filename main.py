@@ -761,4 +761,130 @@ def send_message(text):
                 url,
                 json={
                     "chat_id": CHAT_ID,
-     
+                    "text": chunk,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=15
+            )
+
+            print(f"msg {idx + 1}: {r.status_code}")
+
+            if r.status_code != 200:
+                print(r.text[:300])
+                r2 = requests.post(
+                    url,
+                    json={
+                        "chat_id": CHAT_ID,
+                        "text": html_to_plain(chunk),
+                        "disable_web_page_preview": True,
+                    },
+                    timeout=15
+                )
+                print(f"plain: {r2.status_code}")
+
+        except Exception as e:
+            print(f"Exception send_message: {e}")
+
+        time.sleep(1)
+
+
+def send_photo(image_url, caption):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+
+    # Telegram photo caption จำกัด 1024 ตัวอักษร
+    caption = caption[:1000]
+
+    try:
+        r = requests.post(
+            url,
+            json={
+                "chat_id": CHAT_ID,
+                "photo": image_url,
+                "caption": caption,
+                "parse_mode": "HTML",
+            },
+            timeout=15
+        )
+
+        print(f"photo: {r.status_code}")
+
+        if r.status_code != 200:
+            print(r.text[:300])
+            send_message(caption)
+
+    except Exception as e:
+        print(f"Photo error: {e}")
+        send_message(caption)
+
+# ══════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════
+
+def send_zone_items(zone_items, zone_label):
+    for i, item in enumerate(zone_items, 1):
+        print(f"ส่ง {zone_label} อันดับ {i}...")
+
+        img = item["image_url"]
+        cap = fmt_photo_caption(i, item, zone_label)
+
+        if img and img != "?":
+            send_photo(img, cap)
+        else:
+            send_message(cap)
+
+        time.sleep(2)
+
+
+def main():
+    ok = login()
+
+    if not ok:
+        send_message("⚠️ Login Tabcut ไม่สำเร็จ วันนี้ดึง report ไม่ได้")
+        return
+
+    scored = collect_products()
+
+    if not scored:
+        send_message("⚠️ วันนี้ไม่มีสินค้าที่ผ่านเกณฑ์จาก Yesterday surge")
+        return
+
+    zone_a, zone_b = split_zones(scored)
+
+    today_str = datetime.now().strftime("%d/%m/%Y")
+
+    print("ส่ง header...")
+    send_message(fmt_main_header(today_str))
+    time.sleep(2)
+
+    if zone_a:
+        print("ส่ง Zone A header...")
+        send_message(fmt_zone_header(
+            "🟢 <b>Zone A — ทำเลยวันนี้</b>",
+            "สินค้าที่สัญญาณแรง เหมาะหยิบไปทำคลิปก่อน"
+        ))
+        time.sleep(2)
+
+        send_zone_items(zone_a, "🟢 <b>Zone A — ทำเลยวันนี้</b>")
+    else:
+        send_message("🟢 <b>Zone A — ทำเลยวันนี้</b>\nวันนี้ยังไม่มีตัวที่เข้าเกณฑ์ชัด")
+
+    time.sleep(2)
+
+    if zone_b:
+        print("ส่ง Zone B header...")
+        send_message(fmt_zone_header(
+            "🟡 <b>Zone B — เช็คก่อนทำ</b>",
+            "มีสัญญาณดี แต่ควรเช็คคลิปคู่แข่ง/คอมมิชชัน/ร้านก่อนลงแรง"
+        ))
+        time.sleep(2)
+
+        send_zone_items(zone_b, "🟡 <b>Zone B — เช็คก่อนทำ</b>")
+    else:
+        send_message("🟡 <b>Zone B — เช็คก่อนทำ</b>\nวันนี้ไม่มีตัวสำรองที่น่าสนใจ")
+
+    print("✅ ส่ง report เสร็จแล้ว")
+
+
+if __name__ == "__main__":
+    main()
