@@ -2,21 +2,31 @@ name: TikTok Daily Tracker
 
 on:
   schedule:
-    - cron: '35 4 * * *'  # 11:35 น. ไทย (04:35 UTC)
-  workflow_dispatch:      # ปุ่มกดรันเอง
-  push:                   # เพิ่มอันนี้: ให้รันทันทีที่กด Commit เพื่อเช็คว่าโค้ดผ่านไหม
-    branches:
-      - main
+    - cron: '0 2 * * *'   # 09:00 น. ไทย
+  workflow_dispatch:        # กดมือได้
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
+
+      # Keep repo active — ป้องกัน GitHub disable cron
+      - name: Keep alive
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git commit --allow-empty -m "keep alive $(date)"
+          git push
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - run: pip install requests pycryptodome
+
       - name: Run tracker
         env:
           BOT_TOKEN:       ${{ secrets.BOT_TOKEN }}
