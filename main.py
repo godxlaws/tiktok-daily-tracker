@@ -21,7 +21,7 @@ BASE_URL  = "https://www.tabcut.com"
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
 ZONE_A_COUNT = 5
-ZONE_B_COUNT = 10
+ZONE_B_COUNT = 5  # ลดเหลือ 5 เฉพาะเด็ดๆ
 
 CATEGORY_MAP = {
     "2":  "💄 บิวตี้",
@@ -81,7 +81,7 @@ def login():
 
 
 # ══════════════════════════════════════
-# FETCH — Smart Page Detection
+# FETCH
 # ══════════════════════════════════════
 
 def fetch_trpc(endpoint, input_dict, max_pages=20):
@@ -185,33 +185,19 @@ def get_velocity(product):
     return round((s1/st)*100, 1) if st > 0 and s1 > 0 else 0.0
 
 def get_trend(product):
-    """
-    เทรนด์ยอดขาย เทียบ 1d vs 3d vs 7d
-    ขึ้น = ยอด 1d สูงกว่าค่าเฉลี่ย 7d
-    """
     s1 = int(get_field(product, "soldCount1d", default=0) or 0)
     s3 = int(get_field(product, "soldCount3d", default=0) or 0)
     s7 = int(get_field(product, "soldCount7d", default=0) or 0)
-
     if s1 == 0:
         return "➡️", s1, s3, s7
-
     avg7 = s7 / 7 if s7 > 0 else 0
-    avg3 = s3 / 3 if s3 > 0 else 0
-
-    if avg7 > 0 and s1 >= avg7 * 1.5:
-        icon = "🚀"   # พุ่งมาก
-    elif avg7 > 0 and s1 >= avg7 * 1.1:
-        icon = "📈"   # ขึ้น
-    elif avg7 > 0 and s1 <= avg7 * 0.7:
-        icon = "📉"   # ลง
-    else:
-        icon = "➡️"   # ทรงตัว
-
+    if avg7 > 0 and s1 >= avg7 * 1.5: icon = "🚀"
+    elif avg7 > 0 and s1 >= avg7 * 1.1: icon = "📈"
+    elif avg7 > 0 and s1 <= avg7 * 0.7: icon = "📉"
+    else: icon = "➡️"
     return icon, s1, s3, s7
 
 def get_commission(product):
-    """Commission rate เป็น %"""
     rate = get_field(product, "commissionRate", default=None)
     if rate is not None and rate != "?":
         try:
@@ -221,20 +207,9 @@ def get_commission(product):
     return None
 
 def get_creator_count(product):
-    """จำนวน Creator ที่ขายสินค้านี้"""
     info = product.get("relatedCreatorInfo")
     if isinstance(info, dict):
         return info.get("total", None)
-    return None
-
-def get_rmb_price(product):
-    """ราคาหยวน — ใช้เทียบต้นทุนจีน"""
-    price = get_field(product, "rmbPrice", default=None)
-    if price and price != "?":
-        try:
-            return float(price)
-        except:
-            pass
     return None
 
 def vel_icon(v):
@@ -258,14 +233,14 @@ def get_shop_link(product):
 def get_image_url(product):
     return get_field(product, "itemPicUrl", "picUrl", "imageUrl", default="")
 
+def is_valid_price(product):
+    """กรองออกถ้าราคา ≤ 1 บาท — ข้อมูลผิดปกติ"""
+    price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
+    return price > 1
+
 
 # ══════════════════════════════════════
 # SCORING
-# ยอดขายเมื่อวาน  30
-# ความใหม่         25
-# Velocity         20
-# ติดหลาย API    15
-# ราคา             10
 # ══════════════════════════════════════
 
 def calculate_score(product, source_count):
@@ -296,7 +271,7 @@ def calculate_score(product, source_count):
 
     price = float(get_field(product, "localPrice", "price", "salePrice", default=0) or 0)
     if 50 <= price <= 500: score += 10; reasons.append(f"ราคา {price:.0f} บาท ขายง่าย")
-    elif 0 < price < 50:  score += 6;  reasons.append(f"ราคา {price:.0f} บาท ถูกมาก")
+    elif 1 < price < 50:  score += 6;  reasons.append(f"ราคา {price:.0f} บาท ถูกมาก")
     elif price > 500:      score += 3;  reasons.append(f"ราคา {price:.0f} บาท สูงหน่อย")
 
     return min(score, 100), reasons
@@ -331,6 +306,9 @@ def collect_all_products():
 
     scored = []
     for iid, product in item_map.items():
+        # กรองราคา ≤ 1 บาทออก
+        if not is_valid_price(product):
+            continue
         score, reasons = calculate_score(product, item_count[iid])
         trend_icon, s1, s3, s7 = get_trend(product)
         scored.append({
@@ -343,28 +321,39 @@ def collect_all_products():
             "shop_link":     get_shop_link(product),
             "commission":    get_commission(product),
             "creator_count": get_creator_count(product),
-            "rmb_price":     get_rmb_price(product),
             "trend_icon":    trend_icon,
             "sold_1d":       s1,
             "sold_3d":       s3,
             "sold_7d":       s7,
         })
 
+    # กรองออกถ้าไม่มีชื่อ
     scored = [
         x for x in scored
-        if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?" and
-           float(get_field(x["product"], "localPrice", "price", "salePrice", default=0) or 0) > 0
+        if get_field(x["product"], "itemTitle", "title", "name", "goodsName") != "?"
     ]
+
     scored.sort(key=lambda x: x["score"], reverse=True)
     print(f"ผ่านกรอง: {len(scored)} ตัว")
     return scored
 
 
 def split_zones(scored):
-    za = scored[:ZONE_A_COUNT]
-    zb = scored[ZONE_A_COUNT:ZONE_A_COUNT + ZONE_B_COUNT]
-    print(f"Zone A: {len(za)}  Zone B: {len(zb)}")
-    return za, zb
+    zone_a = scored[:ZONE_A_COUNT]
+
+    # Zone B — เฉพาะเด็ดๆ: Velocity ≥ 20% หรือ Score ≥ 50
+    remaining = scored[ZONE_A_COUNT:]
+    zone_b = [
+        x for x in remaining
+        if x["velocity"] >= 20 or x["score"] >= 50
+    ]
+
+    # เรียง Zone B ตาม Velocity มากสุดก่อน
+    zone_b.sort(key=lambda x: x["velocity"], reverse=True)
+    zone_b = zone_b[:ZONE_B_COUNT]
+
+    print(f"Zone A: {len(zone_a)}  Zone B: {len(zone_b)}")
+    return zone_a, zone_b
 
 
 # ══════════════════════════════════════
@@ -380,22 +369,21 @@ def fmt_zone_a_header(today_str):
     )
 
 def fmt_photo_caption(rank, item):
-    p            = item["product"]
-    score        = item["score"]
-    reasons      = item["reasons"]
-    cat          = item["category"]
-    v            = item["velocity"]
-    link         = item["shop_link"]
-    commission   = item["commission"]
-    creator_cnt  = item["creator_count"]
-    rmb          = item["rmb_price"]
-    trend_icon   = item["trend_icon"]
-    s1           = item["sold_1d"]
-    s3           = item["sold_3d"]
-    s7           = item["sold_7d"]
-    title        = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:45])
-    price        = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    total        = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
+    p           = item["product"]
+    score       = item["score"]
+    reasons     = item["reasons"]
+    cat         = item["category"]
+    v           = item["velocity"]
+    link        = item["shop_link"]
+    commission  = item["commission"]
+    creator_cnt = item["creator_count"]
+    trend_icon  = item["trend_icon"]
+    s1          = item["sold_1d"]
+    s3          = item["sold_3d"]
+    s7          = item["sold_7d"]
+    title       = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:45])
+    price       = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
+    total       = int(get_field(p, "soldCountTotal", "totalSold", "soldCount", default=0) or 0)
 
     lines = [
         f"{rank}. <b>{title}</b>",
@@ -403,7 +391,7 @@ def fmt_photo_caption(rank, item):
         f"💰 ฿{price:.0f}  📦 รวม {total:,}",
     ]
 
-    # เทรนด์ 1d/3d/7d
+    # เทรนด์
     trend_line = f"📊 {trend_icon} 1วัน:{s1:,}"
     if s3 > 0: trend_line += f"  3วัน:{s3:,}"
     if s7 > 0: trend_line += f"  7วัน:{s7:,}"
@@ -412,7 +400,7 @@ def fmt_photo_caption(rank, item):
     lines.append(f"⚡ {vel_bar(v)} {v}%")
     lines.append(f"🎯 Score: {score}/100")
 
-    # Commission
+    # Commission (แสดงเฉพาะถ้ามีข้อมูล)
     if commission is not None:
         lines.append(f"💸 Commission: {commission}%")
 
@@ -425,13 +413,10 @@ def fmt_photo_caption(rank, item):
         else:
             lines.append(f"👥 Creator: {creator_cnt} คน 🔴 คู่แข่งเยอะแล้ว")
 
-    # ราคาหยวน
-    if rmb is not None:
-        lines.append(f"🇨🇳 ราคาจีน: ¥{rmb:.2f}")
-
     for r in reasons[:2]:
         lines.append(f"• {esc(r)}")
 
+    # Link แบบ hyperlink เหมือน Zone A
     if link:
         lines.append(f"\n🛒 <a href=\"{link}\">ดูสินค้าใน TikTok Shop</a>")
 
@@ -447,13 +432,15 @@ def fmt_product_short(rank, item):
     commission  = item["commission"]
     creator_cnt = item["creator_count"]
     trend_icon  = item["trend_icon"]
-    title       = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:28])
+    title       = esc(get_field(p, "itemTitle", "title", "name", "goodsName")[:30])
     price       = float(get_field(p, "localPrice", "price", "salePrice", default=0) or 0)
-    sold_1d     = int(get_field(p, "soldCount1d", "soldCount", default=0) or 0)
+    sold_1d     = item["sold_1d"]
 
     comm_text    = f"  💸{commission}%" if commission is not None else ""
-    creator_text = f"  👥{creator_cnt}" if creator_cnt is not None else ""
-    link_text    = f"\n   🛒 <a href=\"{link}\">TikTok Shop</a>" if link else ""
+    creator_text = f"  👥{creator_cnt}คน" if creator_cnt is not None else ""
+
+    # Link แบบ hyperlink
+    link_text = f"\n   🛒 <a href=\"{link}\">ดูสินค้าใน TikTok Shop</a>" if link else ""
 
     return (
         f"\n{rank}. {title}\n"
@@ -465,18 +452,18 @@ def fmt_product_short(rank, item):
 
 def build_message2(zone_b):
     lines = [
-        "🟡 <b>Zone B — ยังทันถ้ารีบ (อันดับ 6-15)</b>",
+        "🟡 <b>Zone B — เด็ดๆ ที่ยังทัน</b>",
+        "<i>Velocity ≥ 20% หรือ Score ≥ 50</i>",
         "━━━━━━━━━━━━━━━━━━━━",
     ]
     if zone_b:
         for i, item in enumerate(zone_b, 1):
             lines.append(fmt_product_short(i, item))
     else:
-        lines.append("ไม่มีสินค้าวันนี้")
+        lines.append("ไม่มีสินค้าที่น่าสนใจวันนี้")
     lines += [
         "\n━━━━━━━━━━━━━━━━━━━━",
         "🔴>=50%  🟠>=30%  🟡>=20%  🟢>=10%  ⚫<10%",
-        "💸=Commission  👥=จำนวน Creator",
         "🔄 อัพเดทอัตโนมัติทุก 09:00 น.",
     ]
     return "\n".join(lines)
