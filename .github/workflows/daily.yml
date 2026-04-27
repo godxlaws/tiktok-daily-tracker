@@ -15,9 +15,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests
+      - run: pip install requests pycryptodome
       - name: Run tracker
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID:   ${{ secrets.CHAT_ID }}
+          BOT_TOKEN:       ${{ secrets.BOT_TOKEN }}
+          CHAT_ID:         ${{ secrets.CHAT_ID }}
+          TABCUT_EMAIL:    ${{ secrets.TABCUT_EMAIL }}
+          TABCUT_PASSWORD: ${{ secrets.TABCUT_PASSWORD }}
         run: python main.py
