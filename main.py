@@ -7,7 +7,6 @@ from datetime import datetime
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
-import pytz
 
 # ══════════════════════════════════════
 # CONFIG
@@ -126,10 +125,21 @@ def get_link(p):
     iid = get(p, "itemId")
     if not iid:
         return ""
-    return f'<a href="https://www.tiktok.com/view/product/{iid}">🛒 ดูสินค้าใน TikTok</a>'
+    return f"https://www.tiktok.com/view/product/{iid}"
+
 
 def get_img(p):
     return get(p, "itemPicUrl")
+
+
+def safe_text(text):
+    """กัน HTML พังใน Telegram"""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 # ══════════════════════════════════════
@@ -153,8 +163,8 @@ def calculate_score(p):
 # ══════════════════════════════════════
 
 def collect():
-    y = fetch_api(1)   # yesterday
-    d3 = fetch_api(2)  # 3day
+    y = fetch_api(1)
+    d3 = fetch_api(2)
 
     merged = {}
 
@@ -196,9 +206,11 @@ def send(msg):
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json={
             "chat_id": CHAT_ID,
-            "text": msg
+            "text": msg,
+            "parse_mode": "HTML"
         }
     )
+
 
 def send_photo(img, caption):
     requests.post(
@@ -206,13 +218,14 @@ def send_photo(img, caption):
         json={
             "chat_id": CHAT_ID,
             "photo": img,
-            "caption": caption
+            "caption": caption,
+            "parse_mode": "HTML"
         }
     )
 
 
 # ══════════════════════════════════════
-# MAIN (UPDATED FORMAT)
+# MAIN
 # ══════════════════════════════════════
 
 def main():
@@ -222,8 +235,7 @@ def main():
 
     items = collect()
 
-    tz = pytz.timezone("Asia/Bangkok")
-    now = datetime.now(tz)
+    now = datetime.now()
 
     total = len(items)
     picked = total
@@ -242,18 +254,24 @@ def main():
     for i, item in enumerate(items, 1):
         p = item["product"]
 
+        link = get_link(p)
+        link_line = ""
+
+        if link:
+            link_line = f"\n🛒 <a href=\"{link}\">ดูสินค้าใน TikTok Shop</a>"
+
         text = (
-            f"{i}. 🚀 {get_title(p)}\n"
+            f"{i}. 🚀 {safe_text(get_title(p))}\n"
             f"💰 {get_price(p)} บาท\n"
             f"📦 1d: {item['sold_1d']} | 3d: {item['sold_3d']}\n"
-            f"🚀 Growth: x{item['growth']}\n"
-            f"{get_link(p)}"
+            f"🚀 Growth: x{item['growth']}"
+            f"{link_line}"
         )
 
         send_photo(get_img(p), text)
         time.sleep(1)
 
-    # ───────── STATS BLOCK ─────────
+    # ───────── STATS ─────────
     stats = (
         f"\n📊 Stats\n"
         f"total: {total}\n"
