@@ -7,6 +7,7 @@ from datetime import datetime
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
+from zoneinfo import ZoneInfo
 
 # ══════════════════════════════════════
 # CONFIG
@@ -253,7 +254,7 @@ def main():
 
     viral, stable, peak = collect_and_group()
 
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Bangkok"))
 
     # ═════ HEADER ═════
     send(
