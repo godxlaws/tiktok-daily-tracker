@@ -123,7 +123,9 @@ def get_price(p):
 
 def get_link(p):
     iid = get(p, "itemId")
-    return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
+    if not iid:
+        return ""
+    return f'<a href="https://www.tiktok.com/view/product/{iid}">🛒 ดูสินค้าใน TikTok</a>'
 
 def get_img(p):
     return get(p, "itemPicUrl")
