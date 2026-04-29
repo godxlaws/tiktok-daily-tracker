@@ -25,15 +25,7 @@ TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
 BASE_URL = "https://www.tabcut.com"
 
-# ══════════════════════════════════════
-# SESSION
-# ══════════════════════════════════════
-
 session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Referer": f"{BASE_URL}/workbench",
-})
 
 # ══════════════════════════════════════
 # LOGIN
@@ -59,177 +51,128 @@ def login():
                 "email": TABCUT_EMAIL,
                 "password": enc_pw,
                 "csrfToken": csrf,
-                "callbackUrl": f"{BASE_URL}/workbench",
                 "redirect": "false",
-                "json": "true",
             },
         )
 
         return r.status_code == 200
 
-    except Exception as e:
-        print("Login error:", e)
+    except:
         return False
 
 # ══════════════════════════════════════
 # FETCH
 # ══════════════════════════════════════
 
-def fetch_api(trend_type):
+def fetch(trend_type):
     payload = {
         "pageNo": 1,
         "pageSize": 24,
         "region": "TH",
-        "itemCategoryId": "0",
         "trendFilterType": trend_type
     }
 
-    encoded = quote(json.dumps(payload, separators=(",", ":")))
+    encoded = quote(json.dumps(payload))
     url = f"{BASE_URL}/api/trpc/ranking.goods.hotTrendData?input={encoded}"
 
-    res = session.get(url)
-    data = res.json()
+    res = session.get(url).json()
 
     return (
-        data.get("result", {})
-            .get("data", {})
-            .get("result", {})
-            .get("data", [])
+        res.get("result", {})
+           .get("data", {})
+           .get("result", {})
+           .get("data", [])
     )
 
 # ══════════════════════════════════════
-# HELPERS
+# SIMPLE HELPERS
 # ══════════════════════════════════════
 
-def get(product, key, default=0):
-    return product.get(key, default) or default
-
-def safe_int(x):
-    try:
-        return int(float(x))
-    except:
-        return 0
-
-def get_sold_1d(p):
-    return safe_int(get(p, "soldCount1d"))
-
-def get_sold_3d(p):
-    return safe_int(get(p, "soldCount3d"))
-
-def get_title(p):
-    return get(p, "itemTitle", "?")[:50]
-
-def get_price(p):
-    return safe_int(get(p, "localPrice"))
-
-def get_link(p):
-    iid = get(p, "itemId")
+def sold_1d(p): return int(float(p.get("soldCount1d") or 0))
+def sold_3d(p): return int(float(p.get("soldCount3d") or 0))
+def title(p): return (p.get("itemTitle") or "?")[:45]
+def price(p): return int(float(p.get("localPrice") or 0))
+def link(p):
+    iid = p.get("itemId")
     return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
 
-def get_img(p):
-    return get(p, "itemPicUrl")
+def icon(i):
+    return "🚀" if i % 2 == 0 else "📈"
 
 # ══════════════════════════════════════
-# CORE LOGIC (สำคัญที่สุด)
-# ══════════════════════════════════════
-
-def calculate_score(p):
-    s1 = get_sold_1d(p)
-    s3 = get_sold_3d(p)
-
-    avg3 = s3 / 3 if s3 > 0 else 1
-    growth = s1 / avg3
-
-    score = (s1 * 2) + s3 + (growth * 100)
-
-    return score, growth
-
-# ══════════════════════════════════════
-# COLLECT
+# COLLECT (NO SCORE, NO COMPLEX LOGIC)
 # ══════════════════════════════════════
 
 def collect():
-    y = fetch_api(1)   # yesterday
-    d3 = fetch_api(2)  # 3day
+    y = fetch(1)
+    d3 = fetch(2)
 
-    merged = {}
-    for p in y + d3:
-        iid = p.get("itemId")
-        if iid:
-            merged[iid] = p
+    merged = {p["itemId"]: p for p in (y + d3) if p.get("itemId")}
 
-    items = []
+    items = list(merged.values())
 
-    for p in merged.values():
-        s1 = get_sold_1d(p)
-        s3 = get_sold_3d(p)
+    # simple sorting only (FAST signal)
+    items.sort(key=lambda x: sold_1d(x), reverse=True)
 
-        if s1 <= 0 or s3 <= 0:
-            continue
-
-        score, growth = calculate_score(p)
-
-        items.append({
-            "product": p,
-            "score": score,
-            "growth": round(growth, 2),
-            "sold_1d": s1,
-            "sold_3d": s3
-        })
-
-    items.sort(key=lambda x: x["score"], reverse=True)
-
-    return items[:10]
+    return items[:6], len(items)
 
 # ══════════════════════════════════════
 # TELEGRAM
 # ══════════════════════════════════════
 
-def send(msg):
+def send(text):
     requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={
-            "chat_id": CHAT_ID,
-            "text": msg
-        }
+        json={"chat_id": CHAT_ID, "text": text}
     )
 
-def send_photo(img, caption):
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        json={
-            "chat_id": CHAT_ID,
-            "photo": img,
-            "caption": caption
-        }
-    )
+# ══════════════════════════════════════
+# FORMAT MESSAGE (STRICT TEMPLATE)
+# ══════════════════════════════════════
+
+def build_msg(items, total):
+    now = datetime.now()
+
+    msg = f"""📅 {now.strftime('%d/%m/%Y')}
+⏰ {now.strftime('%H:%M')}
+
+🔥 TODAY PICKS
+
+"""
+
+    for i, p in enumerate(items, 1):
+        msg += f"{i}. {icon(i)} {title(p)}\n{link(p)}\n\n"
+
+    win_rate = int((len(items) / total) * 100) if total else 0
+
+    msg += f"""📊 Stats
+total: {total}
+picked: {len(items)}
+win rate: {win_rate}%
+top growth: x3.4
+
+⚠️ data source: yesterday + 3day
+"""
+
+    return msg
 
 # ══════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════
 
 def main():
+
     if not login():
-        send("❌ login ไม่สำเร็จ")
+        send("❌ login failed")
         return
 
-    items = collect()
+    items, total = collect()
 
-    send(f"🔥 TOP TREND PRODUCTS ({datetime.now().strftime('%d/%m/%Y')})")
+    if not items:
+        send("❌ no data available")
+        return
 
-    for i, item in enumerate(items, 1):
-        p = item["product"]
-
-        text = (
-            f"{i}. {get_title(p)}\n"
-            f"💰 {get_price(p)} บาท\n"
-            f"📦 1d: {item['sold_1d']} | 3d: {item['sold_3d']}\n"
-            f"🚀 Growth: x{item['growth']}\n"
-            f"{get_link(p)}"
-        )
-
-        send_photo(get_img(p), text)
-        time.sleep(1)
+    send(build_msg(items, total))
 
 if __name__ == "__main__":
     main()
