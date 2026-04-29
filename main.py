@@ -100,8 +100,8 @@ def fetch_api(trend_type):
 # HELPERS
 # ══════════════════════════════════════
 
-def get(product, key, default=0):
-    return product.get(key, default) or default
+def get(p, key, default=0):
+    return p.get(key, default) or default
 
 def safe_int(x):
     try:
@@ -109,60 +109,43 @@ def safe_int(x):
     except:
         return 0
 
-def get_sold_1d(p):
-    return safe_int(get(p, "soldCount1d"))
+def sold_1d(p): return safe_int(get(p, "soldCount1d"))
+def sold_3d(p): return safe_int(get(p, "soldCount3d"))
 
-def get_sold_3d(p):
-    return safe_int(get(p, "soldCount3d"))
+def title(p): return get(p, "itemTitle", "?")[:50]
+def price(p): return safe_int(get(p, "localPrice"))
 
-def get_title(p):
-    return get(p, "itemTitle", "?")[:50]
-
-def get_price(p):
-    return safe_int(get(p, "localPrice"))
-
-def get_link(p):
+def link(p):
     iid = get(p, "itemId")
-    if not iid:
-        return ""
-    return f"https://www.tiktok.com/view/product/{iid}"
+    return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
+
+def img(p): return get(p, "itemPicUrl")
 
 
-def get_img(p):
-    return get(p, "itemPicUrl")
-
-
-def safe_text(text):
-    """กัน HTML พังใน Telegram"""
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+def safe_text(t):
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 # ══════════════════════════════════════
-# CORE LOGIC (unchanged)
+# SCORE + MOMENTUM
 # ══════════════════════════════════════
 
-def calculate_score(p):
-    s1 = get_sold_1d(p)
-    s3 = get_sold_3d(p)
+def analyze(p):
+    s1 = sold_1d(p)
+    s3 = sold_3d(p)
 
     avg3 = s3 / 3 if s3 > 0 else 1
     growth = s1 / avg3
-
     score = (s1 * 2) + s3 + (growth * 100)
 
-    return score, growth
+    return s1, s3, growth, score
 
 
 # ══════════════════════════════════════
-# COLLECT
+# COLLECT + GROUP
 # ══════════════════════════════════════
 
-def collect():
+def collect_and_group():
     y = fetch_api(1)
     d3 = fetch_api(2)
 
@@ -173,28 +156,42 @@ def collect():
         if iid:
             merged[iid] = p
 
-    items = []
+    viral = []
+    stable = []
+    peak = []
 
     for p in merged.values():
-        s1 = get_sold_1d(p)
-        s3 = get_sold_3d(p)
+
+        s1, s3, growth, score = analyze(p)
 
         if s1 <= 0 or s3 <= 0:
             continue
 
-        score, growth = calculate_score(p)
-
-        items.append({
-            "product": p,
-            "score": score,
+        item = {
+            "p": p,
+            "s1": s1,
+            "s3": s3,
             "growth": round(growth, 2),
-            "sold_1d": s1,
-            "sold_3d": s3
-        })
+            "score": score
+        }
 
-    items.sort(key=lambda x: x["score"], reverse=True)
+        # ═════ GROUP RULES ═════
 
-    return items[:10]
+        if growth >= 2.5:
+            viral.append(item)
+
+        elif growth < 1.2 and s1 >= 50:
+            peak.append(item)
+
+        else:
+            stable.append(item)
+
+    # sort ภายในกลุ่ม
+    viral.sort(key=lambda x: x["growth"], reverse=True)
+    stable.sort(key=lambda x: x["score"], reverse=True)
+    peak.sort(key=lambda x: x["s1"], reverse=True)
+
+    return viral[:3], stable[:4], peak[:3]
 
 
 # ══════════════════════════════════════
@@ -212,12 +209,12 @@ def send(msg):
     )
 
 
-def send_photo(img, caption):
+def send_photo(img_url, caption):
     requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
         json={
             "chat_id": CHAT_ID,
-            "photo": img,
+            "photo": img_url,
             "caption": caption,
             "parse_mode": "HTML"
         }
@@ -225,66 +222,70 @@ def send_photo(img, caption):
 
 
 # ══════════════════════════════════════
+# FORMAT ITEM
+# ══════════════════════════════════════
+
+def format_item(i, item):
+    p = item["p"]
+
+    text = (
+        f"{i}. 🚀 {safe_text(title(p))}\n"
+        f"💰 {price(p)} บาท\n"
+        f"📦 1d: {item['s1']} | 3d: {item['s3']}\n"
+        f"📈 Growth: x{item['growth']}\n"
+    )
+
+    if link(p):
+        text += f"\n🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok</a>"
+
+    return text
+
+
+# ══════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════
 
 def main():
+
     if not login():
         send("❌ login ไม่สำเร็จ")
         return
 
-    items = collect()
+    viral, stable, peak = collect_and_group()
 
     now = datetime.now()
 
-    total = len(items)
-    picked = total
-    win_rate = int((picked / 10) * 100) if total else 0
-
-    # ───────── HEADER ─────────
-    header = (
+    # ═════ HEADER ═════
+    send(
         f"📅 {now.strftime('%d/%m/%Y')}\n"
         f"⏰ {now.strftime('%H:%M')}\n\n"
-        f"🔥 TODAY PICKS\n"
+        f"🔥 TODAY PICKS (GROUP MODE)"
     )
 
-    send(header)
+    # ═════ VIRAL ═════
+    if viral:
+        send("🚀 VIRAL (Breakout)")
+        for i, item in enumerate(viral, 1):
+            p = item["p"]
+            send_photo(img(p), format_item(i, item))
+            time.sleep(1)
 
-    # ───────── ITEMS ─────────
-    for i, item in enumerate(items, 1):
-        p = item["product"]
+    # ═════ STABLE ═════
+    if stable:
+        send("📈 STABLE (Consistent)")
+        for i, item in enumerate(stable, 1):
+            p = item["p"]
+            send_photo(img(p), format_item(i, item))
+            time.sleep(1)
 
-        link = get_link(p)
-        link_line = ""
+    # ═════ PEAK ═════
+    if peak:
+        send("⚠️ PEAK (Saturated)")
+        for i, item in enumerate(peak, 1):
+            p = item["p"]
+            send_photo(img(p), format_item(i, item))
+            time.sleep(1)
 
-        if link:
-            link_line = f"\n🛒 <a href=\"{link}\">ดูสินค้าใน TikTok Shop</a>"
-
-        text = (
-            f"{i}. 🚀 {safe_text(get_title(p))}\n"
-            f"💰 {get_price(p)} บาท\n"
-            f"📦 1d: {item['sold_1d']} | 3d: {item['sold_3d']}\n"
-            f"🚀 Growth: x{item['growth']}"
-            f"{link_line}"
-        )
-
-        send_photo(get_img(p), text)
-        time.sleep(1)
-
-    # ───────── STATS ─────────
-    stats = (
-        f"\n📊 Stats\n"
-        f"total: {total}\n"
-        f"picked: {picked}\n"
-        f"win rate: {win_rate}%\n"
-        f"top growth: x3.4\n\n"
-        f"⚠️ data source: yesterday + 3day"
-    )
-
-    send(stats)
-
-
-# ══════════════════════════════════════
 
 if __name__ == "__main__":
     main()
