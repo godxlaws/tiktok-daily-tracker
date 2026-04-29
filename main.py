@@ -2,27 +2,92 @@ import requests
 import os
 import json
 import time
+import base64
+from datetime import datetime
+from urllib.parse import quote
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+# ══════════════════════════════════════
+# CONFIG
+# ══════════════════════════════════════
+
+def require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing GitHub secret: {name}")
+    return value
+
+BOT_TOKEN = require_env("BOT_TOKEN")
+CHAT_ID = require_env("CHAT_ID")
+TABCUT_EMAIL = require_env("TABCUT_EMAIL")
+TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
 BASE_URL = "https://www.tabcut.com"
+
+# ══════════════════════════════════════
+# SESSION
+# ══════════════════════════════════════
 
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json",
     "Referer": f"{BASE_URL}/workbench",
 })
 
+# ══════════════════════════════════════
+# LOGIN
+# ══════════════════════════════════════
 
-# ======================
-# FETCH API
-# ======================
+def login():
+    try:
+        csrf = session.get(f"{BASE_URL}/api/auth/csrf").json().get("csrfToken")
 
-def fetch(endpoint, payload):
-    url = f"{BASE_URL}/api/trpc/{endpoint}"
-    res = session.get(url, params={"input": json.dumps(payload)})
+        pub_key_raw = session.get(
+            f"{BASE_URL}/api/trpc/user.pubkey?batch=1&input=%7B%7D"
+        ).json()[0]["result"]["data"]
+
+        if "BEGIN PUBLIC KEY" not in pub_key_raw:
+            pub_key_raw = f"-----BEGIN PUBLIC KEY-----\n{pub_key_raw}\n-----END PUBLIC KEY-----"
+
+        cipher = PKCS1_OAEP.new(RSA.importKey(pub_key_raw))
+        enc_pw = base64.b64encode(cipher.encrypt(TABCUT_PASSWORD.encode())).decode()
+
+        r = session.post(
+            f"{BASE_URL}/api/auth/callback/email?",
+            data={
+                "email": TABCUT_EMAIL,
+                "password": enc_pw,
+                "csrfToken": csrf,
+                "callbackUrl": f"{BASE_URL}/workbench",
+                "redirect": "false",
+                "json": "true",
+            },
+        )
+
+        return r.status_code == 200
+
+    except Exception as e:
+        print("Login error:", e)
+        return False
+
+# ══════════════════════════════════════
+# FETCH
+# ══════════════════════════════════════
+
+def fetch_api(trend_type):
+    payload = {
+        "pageNo": 1,
+        "pageSize": 24,
+        "region": "TH",
+        "itemCategoryId": "0",
+        "trendFilterType": trend_type
+    }
+
+    encoded = quote(json.dumps(payload, separators=(",", ":")))
+    url = f"{BASE_URL}/api/trpc/ranking.goods.hotTrendData?input={encoded}"
+
+    res = session.get(url)
     data = res.json()
 
     return (
@@ -32,199 +97,139 @@ def fetch(endpoint, payload):
             .get("data", [])
     )
 
-
-def fetch_yesterday():
-    return fetch("ranking.goods.hotTrendData", {
-        "pageNo": 1,
-        "pageSize": 24,
-        "region": "TH",
-        "itemCategoryId": "0",
-        "trendFilterType": 1
-    })
-
-
-def fetch_3day():
-    return fetch("ranking.goods.hotTrendData", {
-        "pageNo": 1,
-        "pageSize": 24,
-        "region": "TH",
-        "itemCategoryId": "0",
-        "trendFilterType": 2
-    })
-
-
-# ======================
+# ══════════════════════════════════════
 # HELPERS
-# ======================
+# ══════════════════════════════════════
 
-def get(p, *keys, default=0):
-    for k in keys:
-        if k in p and p[k] not in [None, ""]:
-            return p[k]
-    return default
+def get(product, key, default=0):
+    return product.get(key, default) or default
 
-
-def to_int(x):
+def safe_int(x):
     try:
         return int(float(x))
     except:
         return 0
 
+def get_sold_1d(p):
+    return safe_int(get(p, "soldCount1d"))
 
-def get_id(p):
-    return get(p, "itemId")
-
+def get_sold_3d(p):
+    return safe_int(get(p, "soldCount3d"))
 
 def get_title(p):
-    return str(get(p, "itemTitle", "title", "name", default="?"))[:50]
-
+    return get(p, "itemTitle", "?")[:50]
 
 def get_price(p):
-    return float(get(p, "localPrice", "price", default=0))
-
-
-def get_1d(p):
-    return to_int(get(p, "soldCount1d"))
-
-
-def get_3d(p):
-    return to_int(get(p, "soldCount3d"))
-
-
-def get_total(p):
-    return to_int(get(p, "soldCountTotal"))
-
-
-def get_image(p):
-    return get(p, "itemPicUrl", "imageUrl", default="")
-
+    return safe_int(get(p, "localPrice"))
 
 def get_link(p):
-    iid = get_id(p)
-    if iid:
-        return f"https://www.tiktok.com/view/product/{iid}"
-    return ""
+    iid = get(p, "itemId")
+    return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
 
+def get_img(p):
+    return get(p, "itemPicUrl")
 
-# ======================
-# SCORING (หัวใจหลัก)
-# ======================
+# ══════════════════════════════════════
+# CORE LOGIC (สำคัญที่สุด)
+# ══════════════════════════════════════
 
-def trend_score(p, p3=None):
-    s1 = get_1d(p)
-    s3 = get_3d(p)
+def calculate_score(p):
+    s1 = get_sold_1d(p)
+    s3 = get_sold_3d(p)
 
-    if s3 <= 0 and p3:
-        s3 = get_3d(p3)
+    avg3 = s3 / 3 if s3 > 0 else 1
+    growth = s1 / avg3
 
-    avg3 = s3 / 3 if s3 > 0 else 0
-    total = get_total(p)
+    score = (s1 * 2) + s3 + (growth * 100)
 
-    score = 0
+    return score, growth
 
-    # Demand
-    if s1 >= 500:
-        score += 40
-    elif s1 >= 200:
-        score += 30
-    elif s1 >= 100:
-        score += 20
-    else:
-        score += 5
+# ══════════════════════════════════════
+# COLLECT
+# ══════════════════════════════════════
 
-    # Momentum
-    ratio = 0
-    if avg3 > 0:
-        ratio = s1 / avg3
+def collect():
+    y = fetch_api(1)   # yesterday
+    d3 = fetch_api(2)  # 3day
 
-        if ratio >= 2:
-            score += 40
-        elif ratio >= 1.5:
-            score += 30
-        elif ratio >= 1.2:
-            score += 20
-        elif ratio >= 1:
-            score += 10
-        else:
-            score -= 10
+    merged = {}
+    for p in y + d3:
+        iid = p.get("itemId")
+        if iid:
+            merged[iid] = p
 
-    # Velocity
-    if total > 0:
-        v = s1 / total
-        if v >= 0.3:
-            score += 20
-        elif v >= 0.15:
-            score += 10
+    items = []
 
-    return score, ratio
+    for p in merged.values():
+        s1 = get_sold_1d(p)
+        s3 = get_sold_3d(p)
 
-
-# ======================
-# TELEGRAM
-# ======================
-
-def send_photo(img, caption):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-
-    requests.post(url, json={
-        "chat_id": CHAT_ID,
-        "photo": img,
-        "caption": caption
-    })
-
-
-# ======================
-# MAIN
-# ======================
-
-def main():
-    y = fetch_yesterday()
-    d3 = fetch_3day()
-
-    map3 = {get_id(x): x for x in d3}
-
-    results = []
-
-    for p in y:
-        if get_1d(p) <= 0:
+        if s1 <= 0 or s3 <= 0:
             continue
 
-        p3 = map3.get(get_id(p))
+        score, growth = calculate_score(p)
 
-        score, ratio = trend_score(p, p3)
-
-        results.append({
-            "p": p,
+        items.append({
+            "product": p,
             "score": score,
-            "ratio": ratio
+            "growth": round(growth, 2),
+            "sold_1d": s1,
+            "sold_3d": s3
         })
 
-    results.sort(key=lambda x: x["score"], reverse=True)
+    items.sort(key=lambda x: x["score"], reverse=True)
 
-    top = [x for x in results if x["score"] >= 60][:10]
+    return items[:10]
 
-    for i, item in enumerate(top, 1):
-        p = item["p"]
+# ══════════════════════════════════════
+# TELEGRAM
+# ══════════════════════════════════════
 
-        title = get_title(p)
-        price = get_price(p)
-        s1 = get_1d(p)
-        s3 = get_3d(p)
-        ratio = item["ratio"]
-        score = item["score"]
+def send(msg):
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        json={
+            "chat_id": CHAT_ID,
+            "text": msg
+        }
+    )
 
-        caption = (
-            f"🔥 #{i} {title}\n"
-            f"💰 ฿{price:.0f}\n"
-            f"📊 1D: {s1} | 3D: {s3}\n"
-            f"⚡ Ratio: {ratio:.2f}\n"
-            f"🎯 Score: {score}\n\n"
-            f"🛒 {get_link(p)}"
+def send_photo(img, caption):
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+        json={
+            "chat_id": CHAT_ID,
+            "photo": img,
+            "caption": caption
+        }
+    )
+
+# ══════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════
+
+def main():
+    if not login():
+        send("❌ login ไม่สำเร็จ")
+        return
+
+    items = collect()
+
+    send(f"🔥 TOP TREND PRODUCTS ({datetime.now().strftime('%d/%m/%Y')})")
+
+    for i, item in enumerate(items, 1):
+        p = item["product"]
+
+        text = (
+            f"{i}. {get_title(p)}\n"
+            f"💰 {get_price(p)} บาท\n"
+            f"📦 1d: {item['sold_1d']} | 3d: {item['sold_3d']}\n"
+            f"🚀 Growth: x{item['growth']}\n"
+            f"{get_link(p)}"
         )
 
-        send_photo(get_image(p), caption)
+        send_photo(get_img(p), text)
         time.sleep(1)
-
 
 if __name__ == "__main__":
     main()
