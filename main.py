@@ -7,6 +7,7 @@ from datetime import datetime
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
+import pytz
 
 # ══════════════════════════════════════
 # CONFIG
@@ -221,7 +222,8 @@ def main():
 
     items = collect()
 
-    now = datetime.now()
+    tz = pytz.timezone("Asia/Bangkok")
+    now = datetime.now(tz)
 
     total = len(items)
     picked = total
