@@ -100,27 +100,50 @@ def fetch_trend(trend_type):
 
 
 def fetch_top_selling(limit=5):
-    """ดึงสินค้าขายดีสุดวันนี้"""
     payload = {
-        "pageNo":    1,
-        "pageSize":  24,
-        "rankType":  1,
-        "bizDate":   YESTERDAY,
-        "region":    "TH",
+        "pageNo":     1,
+        "pageSize":   24,
+        "rankType":   1,
+        "bizDate":    YESTERDAY,
+        "region":     "TH",
         "categoryId": "0",
-        "orderType": "1",
+        "orderType":  "1",
         "sellerType": "",
     }
     encoded = quote(json.dumps(payload, separators=(",", ":")))
     url = f"{BASE_URL}/api/trpc/ranking.goods.rankingData?input={encoded}"
+
     try:
         res = session.get(url).json()
-        items = res["result"]["data"]["result"]["data"]
-        # กรองราคา ≤ 1 บาทออก
-        items = [p for p in items if safe_int(get(p, "localPrice")) > 1]
-        return items[:limit]
+
+        # ลอง path หลายแบบ
+        items = (
+            res.get("result", {}).get("data", {}).get("result", {}).get("data", []) or
+            res.get("result", {}).get("data", {}).get("data", []) or
+            res.get("result", {}).get("data", [])
+        )
+
+        print(f"[TOP] found {len(items)} items")
+
+        if items:
+            # print field names ของตัวแรก
+            print(f"[TOP] fields: {list(items[0].keys())}")
+
+        # รองรับทั้ง localPrice และ field อื่นๆ
+        valid = [
+            p for p in items
+            if safe_int(
+                p.get("localPrice") or
+                p.get("price") or
+                p.get("salePrice") or 0
+            ) > 1
+        ]
+
+        print(f"[TOP] valid after filter: {len(valid)}")
+        return valid[:limit]
+
     except Exception as e:
-        print(f"fetch_top_selling error: {e}")
+        print(f"[TOP] error: {e}")
         return []
 
 
