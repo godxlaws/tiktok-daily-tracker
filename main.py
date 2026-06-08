@@ -118,8 +118,8 @@ def fetch_top_selling(limit=5):
             res.get("result", {}).get("data", {}).get("data", []) or
             res.get("result", {}).get("data", [])
         )
-        # กรองออกถ้าไม่มีราคา
-        valid = [p for p in items if top_price(p) > 0]
+        # กรองด้วยยอดขาย ไม่ใช้ราคา
+        valid = [p for p in items if top_sold(p) > 0]
         print(f"[TOP] found {len(items)} → valid {len(valid)}")
         return valid[:limit]
     except Exception as e:
@@ -128,7 +128,7 @@ def fetch_top_selling(limit=5):
 
 
 # ══════════════════════════════════════
-# HELPERS — TREND API (hotTrendData)
+# HELPERS — TREND API
 # ══════════════════════════════════════
 
 def get(p, key, default=0):
@@ -149,7 +149,6 @@ def safe_float(x):
 def sold_1d(p): return safe_int(get(p, "soldCount1d"))
 def sold_3d(p): return safe_int(get(p, "soldCount3d"))
 def title(p):   return get(p, "itemTitle", "?")[:50]
-def price(p):   return safe_int(get(p, "localPrice"))
 
 def link_from_id(item_id):
     return f"https://www.tiktok.com/view/product/{item_id}" if item_id else ""
@@ -167,83 +166,61 @@ def safe_text(t):
 
 # ══════════════════════════════════════
 # HELPERS — TOP SELLING API (rankingData)
-# field ต่างจาก hotTrendData!
 # ══════════════════════════════════════
 
-def top_price(p):
-    """ราคาจาก priceList[0]["local"] หารด้วย 100 (satang → baht)"""
-    price_list = p.get("priceList") or []
-    if price_list and isinstance(price_list, list):
-        try:
-            raw = safe_float(price_list[0].get("local") or 0)
-            return raw / 100  # satang → baht
-        except:
-            pass
-    return 0.0
-
-
 def top_sold(p):
-    """ยอดขายในรอบนี้จาก soldCountInfo.periodCurrent"""
     info = p.get("soldCountInfo") or {}
     return safe_int(info.get("periodCurrent") or info.get("total") or 0)
 
-
 def top_total_sold(p):
-    """ยอดขายรวมทั้งหมด"""
     info = p.get("soldCountInfo") or {}
     return safe_int(info.get("total") or 0)
 
-
 def top_growth(p):
-    """growth rate เป็น % เช่น 0.2379 → +23.8%"""
     rate = safe_float(p.get("soldCountGrowthRate") or 0)
-    return round(rate * 100, 1)
-
+    pct  = round(rate * 100, 1)
+    # ถ้า rate = 1 แสดงว่า API ให้ค่าสูงสุด (ใหม่มาก)
+    if rate >= 1:
+        return None  # ไม่แสดง — ข้อมูลไม่แม่น
+    return pct
 
 def top_commission(p):
-    """Commission % เช่น 0.15 → 15%"""
     rate = safe_float(p.get("commissionRate") or 0)
-    return round(rate * 100, 1) if rate > 0 else None
-
+    return round(rate * 100, 1)  # คืน 0.0 ถ้าไม่มี
 
 def top_videos(p):
-    """จำนวนคลิปใน 90 วัน"""
     info = p.get("relatedVideoInfo") or {}
-    val = info.get("period90d")
+    val  = info.get("period90d")
     return safe_int(val) if val is not None else None
-
 
 def top_creators(p):
-    """จำนวน Creator ใน 90 วัน"""
     info = p.get("relatedCreatorInfo") or {}
-    val = info.get("period90d")
+    val  = info.get("period90d")
     return safe_int(val) if val is not None else None
-
 
 def top_img(p):
     url = p.get("itemPicUrl") or ""
     return url if url and url != 0 else ""
-
 
 def top_link(p):
     return link_from_id(p.get("itemId", ""))
 
 
 # ══════════════════════════════════════
-# ANALYZE — สำหรับ trend items
+# ANALYZE — TREND
 # ══════════════════════════════════════
 
 def analyze(p):
-    s1   = sold_1d(p)
-    s3   = sold_3d(p)
-    avg3 = s3 / 3 if s3 > 0 else 1
+    s1     = sold_1d(p)
+    s3     = sold_3d(p)
+    avg3   = s3 / 3 if s3 > 0 else 1
     growth = s1 / avg3
     score  = (s1 * 2) + s3 + (growth * 100)
     return s1, s3, growth, score
 
 
 # ══════════════════════════════════════
-# COLLECT + GROUP — trend items
+# COLLECT + GROUP
 # ══════════════════════════════════════
 
 def collect_and_group():
@@ -259,10 +236,9 @@ def collect_and_group():
     viral, stable, peak = [], [], []
 
     for p in merged.values():
-        if price(p) <= 1:
-            continue
-
         s1, s3, growth, score = analyze(p)
+
+        # กรองด้วยยอดขาย ไม่ใช้ราคา
         if s1 <= 0 or s3 <= 0:
             continue
 
@@ -293,21 +269,21 @@ def collect_and_group():
 # ══════════════════════════════════════
 
 def format_trend_item(i, item):
+    """VIRAL / STABLE / PEAK — ไม่แสดงราคา"""
     p = item["p"]
     text = (
         f"{i}. <b>{safe_text(title(p))}</b>\n"
-        f"💰 ฿{price(p):,} บาท\n"
         f"📦 1วัน: {item['s1']:,}  |  3วัน: {item['s3']:,}\n"
         f"📈 Growth: x{item['growth']}\n"
     )
     if link(p):
-        text += f"\n🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
+        text += f"🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
     return text
 
 
 def format_top_item(i, p):
+    """TOP 5 — ไม่แสดงราคา ดูจากลิงก์เอง"""
     name     = safe_text((p.get("itemName") or "?")[:45])
-    pr       = top_price(p)
     sold     = top_sold(p)
     total    = top_total_sold(p)
     growth   = top_growth(p)
@@ -317,21 +293,27 @@ def format_top_item(i, p):
     lnk      = top_link(p)
     seller   = safe_text(p.get("sellerName") or "")
 
-    # growth icon
-    if growth > 0:
-        g_icon = f"📈 +{growth}%"
+    # growth
+    if growth is None:
+        g_text = "📊 ใหม่ (ยังไม่มีข้อมูลเทรนด์)"
+    elif growth > 0:
+        g_text = f"📈 +{growth}%"
     elif growth < 0:
-        g_icon = f"📉 {growth}%"
+        g_text = f"📉 {growth}%"
     else:
-        g_icon = "➡️ ใหม่"
+        g_text = "➡️ ทรงตัว"
 
     # commission
-    comm_text = f"  💸 {comm}%" if comm else ""
+    if comm == 0:
+        comm_text = "⛔ Commission 0% — เช็ค TikTok Shop ก่อนทำ"
+    else:
+        comm_text = f"💸 Commission: {comm}%"
 
     # videos + creators
     vc_parts = []
     if videos is not None:
-        vc_parts.append(f"🎬 {videos} คลิป")
+        label = "🎬 0 คลิป ← คู่แข่งน้อยมาก!" if videos == 0 else f"🎬 {videos} คลิป"
+        vc_parts.append(label)
     if creators is not None:
         vc_parts.append(f"👥 {creators} Creator")
     vc_text = "  ".join(vc_parts)
@@ -339,8 +321,9 @@ def format_top_item(i, p):
     text = (
         f"{i}. <b>{name}</b>\n"
         f"🏪 {seller}\n"
-        f"💰 ฿{pr:,.0f}  📦 ขาย {sold:,} ชิ้น (รวม {total:,})\n"
-        f"{g_icon}{comm_text}\n"
+        f"📦 ขาย {sold:,} ชิ้น (รวม {total:,})\n"
+        f"{g_text}\n"
+        f"{comm_text}\n"
     )
     if vc_text:
         text += f"{vc_text}\n"
@@ -435,9 +418,9 @@ def main():
         for i, item in enumerate(peak, 1):
             send_item(format_trend_item(i, item), img(item["p"]))
 
-    # TOP 5 ขายดีสุด
+    # TOP 5
     if top:
-        send("🏆 <b>TOP 5 — ขายดีที่สุดวันนี้</b>")
+        send("🏆 <b>TOP 5 — ขายดีที่สุดวันนี้ (เรียงตาม GMV)</b>")
         for i, p in enumerate(top, 1):
             send_item(format_top_item(i, p), top_img(p))
     else:
