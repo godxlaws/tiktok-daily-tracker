@@ -100,6 +100,7 @@ def fetch_trend(trend_type):
 
 
 def fetch_top_selling(limit=5):
+    """ดึงสินค้าขายดีสุดวันนี้"""
     payload = {
         "pageNo":     1,
         "pageSize":   24,
@@ -112,43 +113,23 @@ def fetch_top_selling(limit=5):
     }
     encoded = quote(json.dumps(payload, separators=(",", ":")))
     url = f"{BASE_URL}/api/trpc/ranking.goods.rankingData?input={encoded}"
-
     try:
         res = session.get(url).json()
-
-        # ลอง path หลายแบบ
         items = (
             res.get("result", {}).get("data", {}).get("result", {}).get("data", []) or
             res.get("result", {}).get("data", {}).get("data", []) or
             res.get("result", {}).get("data", [])
         )
-
-        print(f"[TOP] found {len(items)} items")
-
-        if items:
-            # print field names ของตัวแรก
-            print(f"[TOP] fields: {list(items[0].keys())}")
-
-        # รองรับทั้ง localPrice และ field อื่นๆ
-        valid = [
-            p for p in items
-            if safe_int(
-                p.get("localPrice") or
-                p.get("price") or
-                p.get("salePrice") or 0
-            ) > 1
-        ]
-
-        print(f"[TOP] valid after filter: {len(valid)}")
+        valid = [p for p in items if get_price_from_list(p) > 1]
+        print(f"[TOP] valid: {len(valid)}")
         return valid[:limit]
-
     except Exception as e:
         print(f"[TOP] error: {e}")
         return []
 
 
 # ══════════════════════════════════════
-# HELPERS
+# HELPERS — TREND API
 # ══════════════════════════════════════
 
 def get(p, key, default=0):
@@ -178,6 +159,56 @@ def safe_text(t):
 
 
 # ══════════════════════════════════════
+# HELPERS — TOP SELLING API
+# (field name ต่างจาก trend API)
+# ══════════════════════════════════════
+
+def get_price_from_list(p):
+    """ดึงราคาจาก priceList ของ rankingData"""
+    price_list = p.get("priceList") or []
+    if price_list and isinstance(price_list, list):
+        try:
+            first = price_list[0]
+            return safe_int(
+                first.get("price") or
+                first.get("localPrice") or
+                first.get("salePrice") or 0
+            )
+        except:
+            pass
+    return safe_int(
+        p.get("localPrice") or
+        p.get("price") or
+        p.get("salePrice") or 0
+    )
+
+
+def get_sold_from_info(p):
+    """ดึงยอดขายจาก soldCountInfo ของ rankingData"""
+    info = p.get("soldCountInfo") or {}
+    if isinstance(info, dict):
+        current = info.get("periodCurrent") or {}
+        if isinstance(current, dict):
+            return safe_int(
+                current.get("local") or
+                current.get("total") or 0
+            )
+        return safe_int(info.get("total") or 0)
+    return safe_int(p.get("soldCountPeriod") or 0)
+
+
+def img_top(p):
+    """ดึงรูปจาก rankingData"""
+    url = p.get("itemPicUrl") or p.get("picUrl") or ""
+    return url if url and url != 0 else ""
+
+
+def link_top(p):
+    iid = p.get("itemId", "")
+    return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
+
+
+# ══════════════════════════════════════
 # ANALYZE
 # ══════════════════════════════════════
 
@@ -195,8 +226,8 @@ def analyze(p):
 # ══════════════════════════════════════
 
 def collect_and_group():
-    y  = fetch_trend(1)   # surge 1d
-    d3 = fetch_trend(2)   # surge 3d
+    y  = fetch_trend(1)
+    d3 = fetch_trend(2)
 
     merged = {}
     for p in y + d3:
@@ -207,7 +238,6 @@ def collect_and_group():
     viral, stable, peak = [], [], []
 
     for p in merged.values():
-        # กรองราคา ≤ 1 บาทออก
         if price(p) <= 1:
             continue
 
@@ -257,14 +287,20 @@ def format_trend_item(i, item):
 
 
 def format_top_item(i, p):
-    """Format สำหรับ TOP 5 ขายดี"""
-    sold = safe_int(get(p, "soldCount1d") or get(p, "soldCountTotal"))
+    """Format สำหรับ TOP 5 ขายดี — ใช้ field ของ rankingData"""
+    name  = safe_text((p.get("itemName") or "?")[:50])
+    pr    = get_price_from_list(p)
+    sold  = get_sold_from_info(p)
+    comm  = p.get("commissionRate")
+    comm_text = f"  💸 {round(float(comm)*100, 1)}%" if comm else ""
+    lnk   = link_top(p)
+
     text = (
-        f"{i}. <b>{safe_text(title(p))}</b>\n"
-        f"💰 {price(p)} บาท  📦 ขายแล้ว {sold:,} ชิ้น\n"
+        f"{i}. <b>{name}</b>\n"
+        f"💰 ฿{pr}  📦 ขายแล้ว {sold:,} ชิ้น{comm_text}\n"
     )
-    if link(p):
-        text += f"🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
+    if lnk:
+        text += f"🛒 <a href=\"{lnk}\">ดูสินค้าใน TikTok Shop</a>"
     return text
 
 
@@ -299,7 +335,6 @@ def send_photo(img_url, caption):
             },
             timeout=15,
         )
-        # ถ้ารูปส่งไม่ได้ ส่งเป็นข้อความแทน
         if r.status_code != 200:
             send(caption)
     except Exception as e:
@@ -308,7 +343,6 @@ def send_photo(img_url, caption):
 
 
 def send_item(caption, img_url=""):
-    """ส่งรูปถ้ามี ไม่มีส่งข้อความ"""
     if img_url:
         send_photo(img_url, caption)
     else:
@@ -363,7 +397,7 @@ def main():
     if top:
         send("🏆 <b>TOP 5 — ขายดีที่สุดวันนี้</b>")
         for i, p in enumerate(top, 1):
-            send_item(format_top_item(i, p), img(p))
+            send_item(format_top_item(i, p), img_top(p))
     else:
         send("🏆 <b>TOP 5</b>\nไม่มีข้อมูลวันนี้")
 
