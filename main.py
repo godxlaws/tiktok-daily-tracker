@@ -3,7 +3,7 @@ import os
 import json
 import time
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
@@ -19,12 +19,13 @@ def require_env(name):
         raise RuntimeError(f"Missing GitHub secret: {name}")
     return value
 
-BOT_TOKEN = require_env("BOT_TOKEN")
-CHAT_ID = require_env("CHAT_ID")
-TABCUT_EMAIL = require_env("TABCUT_EMAIL")
+BOT_TOKEN       = require_env("BOT_TOKEN")
+CHAT_ID         = require_env("CHAT_ID")
+TABCUT_EMAIL    = require_env("TABCUT_EMAIL")
 TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
-BASE_URL = "https://www.tabcut.com"
+BASE_URL  = "https://www.tabcut.com"
+YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
 # ══════════════════════════════════════
 # SESSION
@@ -57,16 +58,19 @@ def login():
         r = session.post(
             f"{BASE_URL}/api/auth/callback/email?",
             data={
-                "email": TABCUT_EMAIL,
-                "password": enc_pw,
-                "csrfToken": csrf,
+                "email":       TABCUT_EMAIL,
+                "password":    enc_pw,
+                "csrfToken":   csrf,
                 "callbackUrl": f"{BASE_URL}/workbench",
-                "redirect": "false",
-                "json": "true",
+                "redirect":    "false",
+                "json":        "true",
             },
         )
-
-        return r.status_code == 200
+        if r.status_code == 200:
+            print("✅ Login สำเร็จ")
+            return True
+        print(f"❌ Login ล้มเหลว: {r.status_code}")
+        return False
 
     except Exception as e:
         print("Login error:", e)
@@ -77,23 +81,46 @@ def login():
 # FETCH
 # ══════════════════════════════════════
 
-def fetch_api(trend_type):
+def fetch_trend(trend_type):
+    """ดึงสินค้ากำลังมา (surge 1d หรือ 3d)"""
     payload = {
-        "pageNo": 1,
-        "pageSize": 24,
-        "region": "TH",
-        "itemCategoryId": "0",
-        "trendFilterType": trend_type
+        "pageNo":          1,
+        "pageSize":        24,
+        "region":          "TH",
+        "itemCategoryId":  "0",
+        "trendFilterType": trend_type,
     }
-
     encoded = quote(json.dumps(payload, separators=(",", ":")))
     url = f"{BASE_URL}/api/trpc/ranking.goods.hotTrendData?input={encoded}"
-
-    res = session.get(url).json()
-
     try:
+        res = session.get(url).json()
         return res["result"]["data"]["result"]["data"]
     except:
+        return []
+
+
+def fetch_top_selling(limit=5):
+    """ดึงสินค้าขายดีสุดวันนี้"""
+    payload = {
+        "pageNo":    1,
+        "pageSize":  24,
+        "rankType":  1,
+        "bizDate":   YESTERDAY,
+        "region":    "TH",
+        "categoryId": "0",
+        "orderType": "1",
+        "sellerType": "",
+    }
+    encoded = quote(json.dumps(payload, separators=(",", ":")))
+    url = f"{BASE_URL}/api/trpc/ranking.goods.rankingData?input={encoded}"
+    try:
+        res = session.get(url).json()
+        items = res["result"]["data"]["result"]["data"]
+        # กรองราคา ≤ 1 บาทออก
+        items = [p for p in items if safe_int(get(p, "localPrice")) > 1]
+        return items[:limit]
+    except Exception as e:
+        print(f"fetch_top_selling error: {e}")
         return []
 
 
@@ -112,33 +139,31 @@ def safe_int(x):
 
 def sold_1d(p): return safe_int(get(p, "soldCount1d"))
 def sold_3d(p): return safe_int(get(p, "soldCount3d"))
-
-def title(p): return get(p, "itemTitle", "?")[:50]
-def price(p): return safe_int(get(p, "localPrice"))
+def title(p):   return get(p, "itemTitle", "?")[:50]
+def price(p):   return safe_int(get(p, "localPrice"))
 
 def link(p):
     iid = get(p, "itemId")
     return f"https://www.tiktok.com/view/product/{iid}" if iid else ""
 
-def img(p): return get(p, "itemPicUrl")
-
+def img(p):
+    url = get(p, "itemPicUrl")
+    return url if url and url != 0 else ""
 
 def safe_text(t):
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 # ══════════════════════════════════════
-# SCORE + MOMENTUM
+# ANALYZE
 # ══════════════════════════════════════
 
 def analyze(p):
-    s1 = sold_1d(p)
-    s3 = sold_3d(p)
-
+    s1   = sold_1d(p)
+    s3   = sold_3d(p)
     avg3 = s3 / 3 if s3 > 0 else 1
     growth = s1 / avg3
-    score = (s1 * 2) + s3 + (growth * 100)
-
+    score  = (s1 * 2) + s3 + (growth * 100)
     return s1, s3, growth, score
 
 
@@ -147,21 +172,21 @@ def analyze(p):
 # ══════════════════════════════════════
 
 def collect_and_group():
-    y = fetch_api(1)
-    d3 = fetch_api(2)
+    y  = fetch_trend(1)   # surge 1d
+    d3 = fetch_trend(2)   # surge 3d
 
     merged = {}
-
     for p in y + d3:
         iid = p.get("itemId")
         if iid:
             merged[iid] = p
 
-    viral = []
-    stable = []
-    peak = []
+    viral, stable, peak = [], [], []
 
     for p in merged.values():
+        # กรองราคา ≤ 1 บาทออก
+        if price(p) <= 1:
+            continue
 
         s1, s3, growth, score = analyze(p)
 
@@ -169,30 +194,55 @@ def collect_and_group():
             continue
 
         item = {
-            "p": p,
-            "s1": s1,
-            "s3": s3,
+            "p":      p,
+            "s1":     s1,
+            "s3":     s3,
             "growth": round(growth, 2),
-            "score": score
+            "score":  score,
         }
-
-        # ═════ GROUP RULES ═════
 
         if growth >= 2.5:
             viral.append(item)
-
         elif growth < 1.2 and s1 >= 50:
             peak.append(item)
-
         else:
             stable.append(item)
 
-    # sort ภายในกลุ่ม
     viral.sort(key=lambda x: x["growth"], reverse=True)
-    stable.sort(key=lambda x: x["score"], reverse=True)
-    peak.sort(key=lambda x: x["s1"], reverse=True)
+    stable.sort(key=lambda x: x["score"],  reverse=True)
+    peak.sort(key=lambda x: x["s1"],       reverse=True)
 
     return viral[:3], stable[:4], peak[:3]
+
+
+# ══════════════════════════════════════
+# FORMAT
+# ══════════════════════════════════════
+
+def format_trend_item(i, item):
+    """Format สำหรับ VIRAL / STABLE / PEAK"""
+    p = item["p"]
+    text = (
+        f"{i}. <b>{safe_text(title(p))}</b>\n"
+        f"💰 {price(p)} บาท\n"
+        f"📦 1วัน: {item['s1']:,}  |  3วัน: {item['s3']:,}\n"
+        f"📈 Growth: x{item['growth']}\n"
+    )
+    if link(p):
+        text += f"\n🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
+    return text
+
+
+def format_top_item(i, p):
+    """Format สำหรับ TOP 5 ขายดี"""
+    sold = safe_int(get(p, "soldCount1d") or get(p, "soldCountTotal"))
+    text = (
+        f"{i}. <b>{safe_text(title(p))}</b>\n"
+        f"💰 {price(p)} บาท  📦 ขายแล้ว {sold:,} ชิ้น\n"
+    )
+    if link(p):
+        text += f"🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
+    return text
 
 
 # ══════════════════════════════════════
@@ -200,46 +250,47 @@ def collect_and_group():
 # ══════════════════════════════════════
 
 def send(msg):
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={
-            "chat_id": CHAT_ID,
-            "text": msg,
-            "parse_mode": "HTML"
-        }
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id":    CHAT_ID,
+                "text":       msg,
+                "parse_mode": "HTML",
+            },
+            timeout=15,
+        )
+    except Exception as e:
+        print(f"send error: {e}")
 
 
 def send_photo(img_url, caption):
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        json={
-            "chat_id": CHAT_ID,
-            "photo": img_url,
-            "caption": caption,
-            "parse_mode": "HTML"
-        }
-    )
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+            json={
+                "chat_id":    CHAT_ID,
+                "photo":      img_url,
+                "caption":    caption[:1024],
+                "parse_mode": "HTML",
+            },
+            timeout=15,
+        )
+        # ถ้ารูปส่งไม่ได้ ส่งเป็นข้อความแทน
+        if r.status_code != 200:
+            send(caption)
+    except Exception as e:
+        print(f"send_photo error: {e}")
+        send(caption)
 
 
-# ══════════════════════════════════════
-# FORMAT ITEM
-# ══════════════════════════════════════
-
-def format_item(i, item):
-    p = item["p"]
-
-    text = (
-        f"{i}. 🚀 {safe_text(title(p))}\n"
-        f"💰 {price(p)} บาท\n"
-        f"📦 1d: {item['s1']} | 3d: {item['s3']}\n"
-        f"📈 Growth: x{item['growth']}\n"
-    )
-
-    if link(p):
-        text += f"\n🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok</a>"
-
-    return text
+def send_item(caption, img_url=""):
+    """ส่งรูปถ้ามี ไม่มีส่งข้อความ"""
+    if img_url:
+        send_photo(img_url, caption)
+    else:
+        send(caption)
+    time.sleep(1.5)
 
 
 # ══════════════════════════════════════
@@ -247,45 +298,53 @@ def format_item(i, item):
 # ══════════════════════════════════════
 
 def main():
-
     if not login():
-        send("❌ login ไม่สำเร็จ")
+        send("❌ Login ไม่สำเร็จ")
         return
 
     viral, stable, peak = collect_and_group()
+    top = fetch_top_selling(5)
 
     now = datetime.now(ZoneInfo("Asia/Bangkok"))
 
-    # ═════ HEADER ═════
+    # ─── Header ───
     send(
-        f"📅 {now.strftime('%d/%m/%Y')}\n"
-        f"⏰ {now.strftime('%H:%M')}\n\n"
-        f"🔥 TODAY PICKS (GROUP MODE)"
+        f"📅 {now.strftime('%d/%m/%Y')}  ⏰ {now.strftime('%H:%M')}\n\n"
+        f"🔥 <b>TikTok Shop Thailand — Daily Picks</b>"
     )
+    time.sleep(1)
 
-    # ═════ VIRAL ═════
+    # ─── VIRAL ───
     if viral:
-        send("🚀 VIRAL (Breakout)")
+        send("🚀 <b>VIRAL — เพิ่งระเบิด ทำเลยด่วน!</b>")
         for i, item in enumerate(viral, 1):
-            p = item["p"]
-            send_photo(img(p), format_item(i, item))
-            time.sleep(1)
+            send_item(format_trend_item(i, item), img(item["p"]))
+    else:
+        send("🚀 <b>VIRAL</b>\nไม่มีสินค้า breakout วันนี้")
 
-    # ═════ STABLE ═════
+    # ─── STABLE ───
     if stable:
-        send("📈 STABLE (Consistent)")
+        send("📈 <b>STABLE — กำลังโต ยังทันทำ</b>")
         for i, item in enumerate(stable, 1):
-            p = item["p"]
-            send_photo(img(p), format_item(i, item))
-            time.sleep(1)
+            send_item(format_trend_item(i, item), img(item["p"]))
+    else:
+        send("📈 <b>STABLE</b>\nไม่มีสินค้า stable วันนี้")
 
-    # ═════ PEAK ═════
+    # ─── PEAK ───
     if peak:
-        send("⚠️ PEAK (Saturated)")
+        send("⚠️ <b>PEAK — ขายดีแต่อิ่มตัวแล้ว</b>")
         for i, item in enumerate(peak, 1):
-            p = item["p"]
-            send_photo(img(p), format_item(i, item))
-            time.sleep(1)
+            send_item(format_trend_item(i, item), img(item["p"]))
+
+    # ─── TOP 5 ขายดีสุด ───
+    if top:
+        send("🏆 <b>TOP 5 — ขายดีที่สุดวันนี้</b>")
+        for i, p in enumerate(top, 1):
+            send_item(format_top_item(i, p), img(p))
+    else:
+        send("🏆 <b>TOP 5</b>\nไม่มีข้อมูลวันนี้")
+
+    print("✅ เสร็จแล้ว")
 
 
 if __name__ == "__main__":
