@@ -2,12 +2,12 @@ name: TikTok Daily Tracker
 
 on:
   schedule:
-    - cron: '0 21 * * *'   # ตี 4 ไทย
+    - cron: '0 21 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages:    write
+  pages: write
   id-token: write
 
 jobs:
