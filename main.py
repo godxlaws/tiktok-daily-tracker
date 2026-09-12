@@ -19,8 +19,6 @@ def require_env(name):
         raise RuntimeError(f"Missing GitHub secret: {name}")
     return value
 
-BOT_TOKEN       = require_env("BOT_TOKEN")
-CHAT_ID         = require_env("CHAT_ID")
 TABCUT_EMAIL    = require_env("TABCUT_EMAIL")
 TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
@@ -44,38 +42,26 @@ session.headers.update({
 def login():
     try:
         csrf = session.get(f"{BASE_URL}/api/auth/csrf").json().get("csrfToken")
-
         pub_key_raw = session.get(
             f"{BASE_URL}/api/trpc/user.pubkey?batch=1&input=%7B%7D"
         ).json()[0]["result"]["data"]
-
         if "BEGIN PUBLIC KEY" not in pub_key_raw:
             pub_key_raw = f"-----BEGIN PUBLIC KEY-----\n{pub_key_raw}\n-----END PUBLIC KEY-----"
-
         cipher = PKCS1_OAEP.new(RSA.importKey(pub_key_raw))
         enc_pw = base64.b64encode(cipher.encrypt(TABCUT_PASSWORD.encode())).decode()
-
-        r = session.post(
-            f"{BASE_URL}/api/auth/callback/email?",
-            data={
-                "email":       TABCUT_EMAIL,
-                "password":    enc_pw,
-                "csrfToken":   csrf,
-                "callbackUrl": f"{BASE_URL}/workbench",
-                "redirect":    "false",
-                "json":        "true",
-            },
-        )
+        r = session.post(f"{BASE_URL}/api/auth/callback/email?", data={
+            "email": TABCUT_EMAIL, "password": enc_pw,
+            "csrfToken": csrf, "callbackUrl": f"{BASE_URL}/workbench",
+            "redirect": "false", "json": "true",
+        })
         if r.status_code == 200:
             print("✅ Login สำเร็จ")
             return True
         print(f"❌ Login ล้มเหลว: {r.status_code}")
         return False
-
     except Exception as e:
         print("Login error:", e)
         return False
-
 
 # ══════════════════════════════════════
 # FETCH
@@ -83,11 +69,8 @@ def login():
 
 def fetch_trend(trend_type):
     payload = {
-        "pageNo":          1,
-        "pageSize":        24,
-        "region":          "TH",
-        "itemCategoryId":  "0",
-        "trendFilterType": trend_type,
+        "pageNo": 1, "pageSize": 24, "region": "TH",
+        "itemCategoryId": "0", "trendFilterType": trend_type,
     }
     encoded = quote(json.dumps(payload, separators=(",", ":")))
     url = f"{BASE_URL}/api/trpc/ranking.goods.hotTrendData?input={encoded}"
@@ -97,17 +80,11 @@ def fetch_trend(trend_type):
     except:
         return []
 
-
 def fetch_top_selling(limit=5):
     payload = {
-        "pageNo":     1,
-        "pageSize":   24,
-        "rankType":   1,
-        "bizDate":    YESTERDAY,
-        "region":     "TH",
-        "categoryId": "0",
-        "orderType":  "1",
-        "sellerType": "",
+        "pageNo": 1, "pageSize": 24, "rankType": 1,
+        "bizDate": YESTERDAY, "region": "TH",
+        "categoryId": "0", "orderType": "1", "sellerType": "",
     }
     encoded = quote(json.dumps(payload, separators=(",", ":")))
     url = f"{BASE_URL}/api/trpc/ranking.goods.rankingData?input={encoded}"
@@ -118,7 +95,6 @@ def fetch_top_selling(limit=5):
             res.get("result", {}).get("data", {}).get("data", []) or
             res.get("result", {}).get("data", [])
         )
-        # กรองด้วยยอดขาย ไม่ใช้ราคา
         valid = [p for p in items if top_sold(p) > 0]
         print(f"[TOP] found {len(items)} → valid {len(valid)}")
         return valid[:limit]
@@ -126,46 +102,35 @@ def fetch_top_selling(limit=5):
         print(f"[TOP] error: {e}")
         return []
 
-
 # ══════════════════════════════════════
-# HELPERS — TREND API
+# HELPERS — TREND
 # ══════════════════════════════════════
 
 def get(p, key, default=0):
     return p.get(key, default) or default
 
 def safe_int(x):
-    try:
-        return int(float(x))
-    except:
-        return 0
+    try: return int(float(x))
+    except: return 0
 
 def safe_float(x):
-    try:
-        return float(x)
-    except:
-        return 0.0
+    try: return float(x)
+    except: return 0.0
 
 def sold_1d(p): return safe_int(get(p, "soldCount1d"))
 def sold_3d(p): return safe_int(get(p, "soldCount3d"))
-def title(p):   return get(p, "itemTitle", "?")[:50]
+def title(p):   return get(p, "itemTitle", "?")[:60]
 
 def link_from_id(item_id):
     return f"https://www.tiktok.com/view/product/{item_id}" if item_id else ""
 
-def link(p):
-    return link_from_id(get(p, "itemId"))
-
+def link(p):  return link_from_id(get(p, "itemId"))
 def img(p):
     url = get(p, "itemPicUrl")
     return url if url and url != 0 else ""
 
-def safe_text(t):
-    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
 # ══════════════════════════════════════
-# HELPERS — TOP SELLING API (rankingData)
+# HELPERS — TOP SELLING
 # ══════════════════════════════════════
 
 def top_sold(p):
@@ -178,15 +143,12 @@ def top_total_sold(p):
 
 def top_growth(p):
     rate = safe_float(p.get("soldCountGrowthRate") or 0)
-    pct  = round(rate * 100, 1)
-    # ถ้า rate = 1 แสดงว่า API ให้ค่าสูงสุด (ใหม่มาก)
-    if rate >= 1:
-        return None  # ไม่แสดง — ข้อมูลไม่แม่น
-    return pct
+    if rate >= 1: return None
+    return round(rate * 100, 1)
 
 def top_commission(p):
     rate = safe_float(p.get("commissionRate") or 0)
-    return round(rate * 100, 1)  # คืน 0.0 ถ้าไม่มี
+    return round(rate * 100, 1)
 
 def top_videos(p):
     info = p.get("relatedVideoInfo") or {}
@@ -202,12 +164,10 @@ def top_img(p):
     url = p.get("itemPicUrl") or ""
     return url if url and url != 0 else ""
 
-def top_link(p):
-    return link_from_id(p.get("itemId", ""))
-
+def top_link(p): return link_from_id(p.get("itemId", ""))
 
 # ══════════════════════════════════════
-# ANALYZE — TREND
+# ANALYZE
 # ══════════════════════════════════════
 
 def analyze(p):
@@ -218,7 +178,6 @@ def analyze(p):
     score  = (s1 * 2) + s3 + (growth * 100)
     return s1, s3, growth, score
 
-
 # ══════════════════════════════════════
 # COLLECT + GROUP
 # ══════════════════════════════════════
@@ -226,7 +185,6 @@ def analyze(p):
 def collect_and_group():
     y  = fetch_trend(1)
     d3 = fetch_trend(2)
-
     merged = {}
     for p in y + d3:
         iid = p.get("itemId")
@@ -234,22 +192,14 @@ def collect_and_group():
             merged[iid] = p
 
     viral, stable, peak = [], [], []
-
     for p in merged.values():
         s1, s3, growth, score = analyze(p)
-
-        # กรองด้วยยอดขาย ไม่ใช้ราคา
         if s1 <= 0 or s3 <= 0:
             continue
-
         item = {
-            "p":      p,
-            "s1":     s1,
-            "s3":     s3,
-            "growth": round(growth, 2),
-            "score":  score,
+            "p": p, "s1": s1, "s3": s3,
+            "growth": round(growth, 2), "score": score,
         }
-
         if growth >= 2.5:
             viral.append(item)
         elif growth < 1.2 and s1 >= 50:
@@ -260,120 +210,52 @@ def collect_and_group():
     viral.sort(key=lambda x: x["growth"], reverse=True)
     stable.sort(key=lambda x: x["score"],  reverse=True)
     peak.sort(key=lambda x: x["s1"],       reverse=True)
-
     return viral[:3], stable[:4], peak[:3]
 
-
 # ══════════════════════════════════════
-# FORMAT
+# BUILD JSON
 # ══════════════════════════════════════
 
-def format_trend_item(i, item):
-    """VIRAL / STABLE / PEAK — ไม่แสดงราคา"""
+def build_trend_card(item):
     p = item["p"]
-    text = (
-        f"{i}. <b>{safe_text(title(p))}</b>\n"
-        f"📦 1วัน: {item['s1']:,}  |  3วัน: {item['s3']:,}\n"
-        f"📈 Growth: x{item['growth']}\n"
-    )
-    if link(p):
-        text += f"🛒 <a href=\"{link(p)}\">ดูสินค้าใน TikTok Shop</a>"
-    return text
+    return {
+        "id":     get(p, "itemId"),
+        "title":  title(p),
+        "img":    img(p),
+        "link":   link(p),
+        "sold1d": item["s1"],
+        "sold3d": item["s3"],
+        "growth": item["growth"],
+    }
 
+def build_top_card(p):
+    return {
+        "id":       p.get("itemId"),
+        "title":    (p.get("itemName") or "?")[:60],
+        "img":      top_img(p),
+        "link":     top_link(p),
+        "seller":   p.get("sellerName") or "",
+        "sold":     top_sold(p),
+        "total":    top_total_sold(p),
+        "growth":   top_growth(p),
+        "comm":     top_commission(p),
+        "videos":   top_videos(p),
+        "creators": top_creators(p),
+    }
 
-def format_top_item(i, p):
-    """TOP 5 — ไม่แสดงราคา ดูจากลิงก์เอง"""
-    name     = safe_text((p.get("itemName") or "?")[:45])
-    sold     = top_sold(p)
-    total    = top_total_sold(p)
-    growth   = top_growth(p)
-    comm     = top_commission(p)
-    videos   = top_videos(p)
-    creators = top_creators(p)
-    lnk      = top_link(p)
-    seller   = safe_text(p.get("sellerName") or "")
-
-    # growth
-    if growth is None:
-        g_text = "📊 ใหม่ (ยังไม่มีข้อมูลเทรนด์)"
-    elif growth > 0:
-        g_text = f"📈 +{growth}%"
-    elif growth < 0:
-        g_text = f"📉 {growth}%"
-    else:
-        g_text = "➡️ ทรงตัว"
-
-    # commission
-    if comm == 0:
-        comm_text = "⛔ Commission 0% — เช็ค TikTok Shop ก่อนทำ"
-    else:
-        comm_text = f"💸 Commission: {comm}%"
-
-    # videos + creators
-    vc_parts = []
-    if videos is not None:
-        label = "🎬 0 คลิป ← คู่แข่งน้อยมาก!" if videos == 0 else f"🎬 {videos} คลิป"
-        vc_parts.append(label)
-    if creators is not None:
-        vc_parts.append(f"👥 {creators} Creator")
-    vc_text = "  ".join(vc_parts)
-
-    text = (
-        f"{i}. <b>{name}</b>\n"
-        f"🏪 {seller}\n"
-        f"📦 ขาย {sold:,} ชิ้น (รวม {total:,})\n"
-        f"{g_text}\n"
-        f"{comm_text}\n"
-    )
-    if vc_text:
-        text += f"{vc_text}\n"
-    if lnk:
-        text += f"🛒 <a href=\"{lnk}\">ดูสินค้าใน TikTok Shop</a>"
-
-    return text
-
-
-# ══════════════════════════════════════
-# TELEGRAM
-# ══════════════════════════════════════
-
-def send(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"},
-            timeout=15,
-        )
-    except Exception as e:
-        print(f"send error: {e}")
-
-
-def send_photo(img_url, caption):
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-            json={
-                "chat_id":    CHAT_ID,
-                "photo":      img_url,
-                "caption":    caption[:1024],
-                "parse_mode": "HTML",
-            },
-            timeout=15,
-        )
-        if r.status_code != 200:
-            send(caption)
-    except Exception as e:
-        print(f"send_photo error: {e}")
-        send(caption)
-
-
-def send_item(caption, img_url=""):
-    if img_url:
-        send_photo(img_url, caption)
-    else:
-        send(caption)
-    time.sleep(1.5)
-
+def save_json(viral, stable, peak, top, now):
+    os.makedirs("data", exist_ok=True)
+    data = {
+        "updated": now.strftime("%d/%m/%Y %H:%M"),
+        "viral":   [build_trend_card(i) for i in viral],
+        "stable":  [build_trend_card(i) for i in stable],
+        "peak":    [build_trend_card(i) for i in peak],
+        "top5":    [build_top_card(p)   for p in top],
+    }
+    with open("data/latest.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("✅ บันทึก data/latest.json แล้ว")
+    print(f"   VIRAL:{len(data['viral'])} STABLE:{len(data['stable'])} PEAK:{len(data['peak'])} TOP5:{len(data['top5'])}")
 
 # ══════════════════════════════════════
 # MAIN
@@ -381,53 +263,15 @@ def send_item(caption, img_url=""):
 
 def main():
     if not login():
-        send("❌ Login ไม่สำเร็จ")
+        print("❌ Login ไม่สำเร็จ")
         return
 
     viral, stable, peak = collect_and_group()
     top = fetch_top_selling(5)
-
     now = datetime.now(ZoneInfo("Asia/Bangkok"))
 
-    # Header
-    send(
-        f"📅 {now.strftime('%d/%m/%Y')}  ⏰ {now.strftime('%H:%M')}\n\n"
-        f"🔥 <b>TikTok Shop Thailand — Daily Picks</b>"
-    )
-    time.sleep(1)
-
-    # VIRAL
-    if viral:
-        send("🚀 <b>VIRAL — เพิ่งระเบิด ทำเลยด่วน!</b>")
-        for i, item in enumerate(viral, 1):
-            send_item(format_trend_item(i, item), img(item["p"]))
-    else:
-        send("🚀 <b>VIRAL</b>\nไม่มีสินค้า breakout วันนี้")
-
-    # STABLE
-    if stable:
-        send("📈 <b>STABLE — กำลังโต ยังทันทำ</b>")
-        for i, item in enumerate(stable, 1):
-            send_item(format_trend_item(i, item), img(item["p"]))
-    else:
-        send("📈 <b>STABLE</b>\nไม่มีสินค้า stable วันนี้")
-
-    # PEAK
-    if peak:
-        send("⚠️ <b>PEAK — ขายดีแต่อิ่มตัวแล้ว</b>")
-        for i, item in enumerate(peak, 1):
-            send_item(format_trend_item(i, item), img(item["p"]))
-
-    # TOP 5
-    if top:
-        send("🏆 <b>TOP 5 — ขายดีที่สุดวันนี้ (เรียงตาม GMV)</b>")
-        for i, p in enumerate(top, 1):
-            send_item(format_top_item(i, p), top_img(p))
-    else:
-        send("🏆 <b>TOP 5</b>\nไม่มีข้อมูลวันนี้")
-
+    save_json(viral, stable, peak, top, now)
     print("✅ เสร็จแล้ว")
-
 
 if __name__ == "__main__":
     main()
