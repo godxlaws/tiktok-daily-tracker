@@ -3,351 +3,588 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TikTok Shop Tracker 🔥</title>
+<title>TikTok Tracker</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --red:    #FE2C55;
+  --cyan:   #25F4EE;
+  --bg:     #080808;
+  --surf:   #111111;
+  --card:   #161616;
+  --border: #232323;
+  --text:   #FFFFFF;
+  --muted:  #666666;
+  --green:  #3ECF6B;
+  --orange: #FF9500;
+}
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f0f0f;
-    color: #fff;
-    min-height: 100vh;
-  }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  header {
-    background: linear-gradient(135deg, #ff0050, #ff4d00);
-    padding: 20px;
-    text-align: center;
-  }
-  header h1 { font-size: 1.6rem; font-weight: 800; }
-  header p  { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
 
-  .updated {
-    text-align: center;
-    padding: 10px;
-    font-size: 0.8rem;
-    color: #888;
-    background: #1a1a1a;
-  }
+/* ─── HEADER ─── */
+.header {
+  padding: 20px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  background: rgba(8,8,8,0.92);
+  backdrop-filter: blur(12px);
+  z-index: 10;
+}
 
-  .tabs {
-    display: flex;
-    overflow-x: auto;
-    background: #1a1a1a;
-    border-bottom: 1px solid #333;
-    scrollbar-width: none;
-  }
-  .tabs::-webkit-scrollbar { display: none; }
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-  .tab {
-    flex: none;
-    padding: 12px 20px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    color: #888;
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s;
-  }
-  .tab.active {
-    color: #ff0050;
-    border-bottom-color: #ff0050;
-  }
+.logo-mark {
+  width: 32px;
+  height: 32px;
+  background: var(--red);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  box-shadow: 4px 4px 0 var(--cyan);
+}
 
-  .section { display: none; padding: 16px; }
-  .section.active { display: block; }
+.logo-text {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
 
-  .section-title {
-    font-size: 1rem;
-    font-weight: 700;
-    margin-bottom: 14px;
-    padding: 8px 12px;
-    background: #1a1a1a;
-    border-radius: 8px;
-    border-left: 4px solid #ff0050;
-  }
+.logo-sub {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 400;
+}
 
-  .cards { display: flex; flex-direction: column; gap: 14px; }
+.updated-pill {
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: var(--surf);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
-  .card {
-    background: #1a1a1a;
-    border-radius: 12px;
-    overflow: hidden;
-    display: flex;
-    gap: 12px;
-    padding: 12px;
-    border: 1px solid #2a2a2a;
-    transition: border-color 0.2s;
-  }
-  .card:hover { border-color: #ff0050; }
+/* ─── TABS ─── */
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 69px;
+  z-index: 9;
+}
+.tabs::-webkit-scrollbar { display: none; }
 
-  .card-img {
-    width: 90px;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 8px;
-    flex-shrink: 0;
-    background: #2a2a2a;
-  }
-  .card-img-placeholder {
-    width: 90px;
-    height: 90px;
-    border-radius: 8px;
-    background: #2a2a2a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    flex-shrink: 0;
-  }
+.tab {
+  flex: none;
+  padding: 14px 18px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  user-select: none;
+}
 
-  .card-body { flex: 1; min-width: 0; }
+.tab.active     { color: var(--text); border-bottom-color: var(--red); }
+.tab[data-id="viral"].active  { border-bottom-color: var(--red); }
+.tab[data-id="stable"].active { border-bottom-color: var(--cyan); }
+.tab[data-id="peak"].active   { border-bottom-color: var(--orange); }
+.tab[data-id="top5"].active   { border-bottom-color: #FFD700; }
 
-  .card-title {
-    font-size: 0.88rem;
-    font-weight: 600;
-    line-height: 1.4;
-    margin-bottom: 8px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+/* ─── SECTIONS ─── */
+.section { display: none; }
+.section.active { display: block; }
 
-  .badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 8px;
-  }
+/* ─── SECTION HERO ─── */
+.section-hero {
+  padding: 20px 16px 12px;
+}
 
-  .badge {
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 20px;
-    white-space: nowrap;
-  }
-  .badge-red    { background: #ff005020; color: #ff6b6b; border: 1px solid #ff005040; }
-  .badge-green  { background: #00ff8820; color: #00ff88; border: 1px solid #00ff8840; }
-  .badge-orange { background: #ff880020; color: #ffaa44; border: 1px solid #ff880040; }
-  .badge-blue   { background: #0088ff20; color: #44aaff; border: 1px solid #0088ff40; }
-  .badge-gray   { background: #44444420; color: #999; border: 1px solid #44444440; }
-  .badge-warn   { background: #ff440020; color: #ff8844; border: 1px solid #ff440040; }
+.section-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
 
-  .stats {
-    display: flex;
-    gap: 12px;
-    font-size: 0.75rem;
-    color: #aaa;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-  }
-  .stats span { display: flex; align-items: center; gap: 3px; }
+.section-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
 
-  .btn-shop {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: #ff0050;
-    color: #fff;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: opacity 0.2s;
-  }
-  .btn-shop:hover { opacity: 0.85; }
+.section-title .accent { color: var(--red); }
+.section-title .accent-cyan { color: var(--cyan); }
+.section-title .accent-orange { color: var(--orange); }
+.section-title .accent-gold { color: #FFD700; }
 
-  .rank-badge {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    background: #ff0050;
-    color: #fff;
-    font-size: 0.7rem;
-    font-weight: 800;
-    padding: 2px 7px;
-    border-radius: 10px;
-  }
-  .card-img-wrap { position: relative; flex-shrink: 0; }
+.section-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
 
-  .seller-name {
-    font-size: 0.72rem;
-    color: #888;
-    margin-bottom: 6px;
-  }
+/* ─── CARDS ─── */
+.cards { padding: 0 12px 24px; display: flex; flex-direction: column; gap: 10px; }
 
-  .comm-warn {
-    font-size: 0.75rem;
-    color: #ff6644;
-    margin-bottom: 6px;
-  }
-  .comm-ok {
-    font-size: 0.75rem;
-    color: #44cc88;
-    margin-bottom: 6px;
-  }
+/* ─── CARD BASE ─── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  gap: 0;
+  position: relative;
+  transition: border-color 0.15s, transform 0.1s;
+}
 
-  .empty {
-    text-align: center;
-    padding: 40px 20px;
-    color: #555;
-    font-size: 0.9rem;
-  }
+.card:active { transform: scale(0.99); }
 
-  .loading {
-    text-align: center;
-    padding: 60px 20px;
-    color: #888;
-  }
-  .spinner {
-    width: 36px; height: 36px;
-    border: 3px solid #333;
-    border-top-color: #ff0050;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 12px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* VIRAL cards — strip accents */
+.card.viral { border-left: 3px solid var(--red); }
+.card.stable { border-left: 3px solid var(--cyan); }
+.card.peak { border-left: 3px solid var(--orange); }
+
+/* ─── CARD IMAGE ─── */
+.card-img-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 100px;
+  height: 100px;
+}
+
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-no-img {
+  width: 100%;
+  height: 100%;
+  background: var(--surf);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.rank-tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: #FFD700;
+  color: #000;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+/* ─── CARD BODY ─── */
+.card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.card-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text);
+}
+
+/* ─── STATS ROW ─── */
+.stats-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stat-val {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.1;
+}
+
+.stat-lbl {
+  font-size: 0.6rem;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* ─── GROWTH PILL ─── */
+.growth {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.growth.up   { background: rgba(62,207,107,0.12); color: var(--green); }
+.growth.down { background: rgba(254,44,85,0.12);  color: var(--red); }
+.growth.flat { background: rgba(102,102,102,0.15); color: var(--muted); }
+.growth.new  { background: rgba(37,244,238,0.1);  color: var(--cyan); }
+
+/* ─── COMMISSION ─── */
+.comm-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.comm-ok {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--green);
+  background: rgba(62,207,107,0.1);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+.comm-warn {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #888;
+  background: rgba(102,102,102,0.1);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+/* ─── META ROW (seller, videos, creators) ─── */
+.meta-row {
+  font-size: 0.68rem;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-row span { display: flex; align-items: center; gap: 3px; }
+
+/* ─── SHOP BUTTON ─── */
+.btn-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 20px;
+  text-decoration: none;
+  width: fit-content;
+  margin-top: 2px;
+  transition: opacity 0.15s;
+}
+.btn-shop:hover, .btn-shop:active { opacity: 0.85; }
+
+/* ─── GROWTH x label ─── */
+.growth-x {
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+/* ─── SELLER NAME ─── */
+.seller {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── EMPTY / LOADING ─── */
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+
+.empty strong { display: block; font-size: 2rem; margin-bottom: 8px; }
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.spinner {
+  width: 28px; height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── RESPONSIVE ─── */
+@media (min-width: 600px) {
+  .cards { padding: 0 16px 28px; gap: 12px; }
+  .card-img-wrap { width: 120px; height: 120px; }
+  .section-title { font-size: 1.6rem; }
+}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>🔥 TikTok Shop Tracker</h1>
-  <p>สินค้าขายดีและกำลังมาแรงใน TikTok Shop Thailand</p>
+<!-- HEADER -->
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark">▶</div>
+    <div>
+      <div class="logo-text">TikTok Tracker</div>
+      <div class="logo-sub">Thailand · Daily Intel</div>
+    </div>
+  </div>
+  <div class="updated-pill" id="updated">กำลังโหลด…</div>
 </header>
 
-<div class="updated" id="updated">กำลังโหลด...</div>
+<!-- TABS -->
+<nav class="tabs">
+  <div class="tab active" data-id="viral"  onclick="switchTab('viral')">🚀 VIRAL</div>
+  <div class="tab"        data-id="stable" onclick="switchTab('stable')">📈 STABLE</div>
+  <div class="tab"        data-id="peak"   onclick="switchTab('peak')">⚠️ PEAK</div>
+  <div class="tab"        data-id="top5"   onclick="switchTab('top5')">🏆 TOP 5</div>
+</nav>
 
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('viral')">🚀 VIRAL</div>
-  <div class="tab" onclick="switchTab('stable')">📈 STABLE</div>
-  <div class="tab" onclick="switchTab('peak')">⚠️ PEAK</div>
-  <div class="tab" onclick="switchTab('top5')">🏆 TOP 5</div>
-</div>
-
-<div id="viral"  class="section active"></div>
-<div id="stable" class="section"></div>
-<div id="peak"   class="section"></div>
-<div id="top5"   class="section"></div>
+<!-- SECTIONS -->
+<div id="viral"  class="section active"><div class="loading"><div class="spinner"></div>กำลังโหลด…</div></div>
+<div id="stable" class="section"><div class="loading"><div class="spinner"></div></div></div>
+<div id="peak"   class="section"><div class="loading"><div class="spinner"></div></div></div>
+<div id="top5"   class="section"><div class="loading"><div class="spinner"></div></div></div>
 
 <script>
+/* ─── TAB SWITCH ─── */
 function switchTab(id) {
-  document.querySelectorAll('.tab').forEach((t, i) => {
-    t.classList.toggle('active', ['viral','stable','peak','top5'][i] === id)
-  })
-  document.querySelectorAll('.section').forEach(s => {
-    s.classList.toggle('active', s.id === id)
-  })
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id === id))
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id))
 }
 
-function growthBadge(g) {
-  if (g === null || g === undefined) return '<span class="badge badge-gray">📊 ใหม่</span>'
-  if (g >  0) return `<span class="badge badge-green">📈 +${g}%</span>`
-  if (g <  0) return `<span class="badge badge-red">📉 ${g}%</span>`
-  return '<span class="badge badge-gray">➡️ ทรงตัว</span>'
+/* ─── HELPERS ─── */
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
 
-function commBadge(comm) {
-  if (comm === 0) return `<div class="comm-warn">⛔ Commission 0% — เช็ค TikTok Shop ก่อนทำ</div>`
-  if (comm > 0)  return `<div class="comm-ok">💸 Commission: ${comm}%</div>`
+function growthPill(g) {
+  if (g === null || g === undefined) return '<span class="growth new">✦ ใหม่</span>'
+  if (g > 0)  return `<span class="growth up">↑ +${g}%</span>`
+  if (g < 0)  return `<span class="growth down">↓ ${g}%</span>`
+  return '<span class="growth flat">→ ทรงตัว</span>'
+}
+
+function commPill(c) {
+  if (c === 0) return '<span class="comm-warn">Commission 0% — เช็คก่อนทำ</span>'
+  if (c > 0)   return `<span class="comm-ok">💸 ${c}% commission</span>`
   return ''
 }
 
 function imgEl(url, rank) {
-  const badge = rank ? `<div class="rank-badge">#${rank}</div>` : ''
-  if (url) return `<div class="card-img-wrap">${badge}<img class="card-img" src="${url}" onerror="this.parentNode.innerHTML='<div class=card-img-placeholder>🛍</div>'"></div>`
-  return `<div class="card-img-wrap">${badge}<div class="card-img-placeholder">🛍</div></div>`
+  const rankTag = rank ? `<div class="rank-tag">#${rank}</div>` : ''
+  if (url) return `<div class="card-img-wrap">${rankTag}<img class="card-img" src="${esc(url)}" onerror="this.parentNode.innerHTML='<div class=card-no-img>🛍</div>'"></div>`
+  return `<div class="card-img-wrap">${rankTag}<div class="card-no-img">🛍</div></div>`
 }
 
-function renderTrend(items, label, desc, containerId) {
-  const el = document.getElementById(containerId)
+function shopBtn(link) {
+  if (!link) return ''
+  return `<a class="btn-shop" href="${esc(link)}" target="_blank" rel="noopener">ดูสินค้า →</a>`
+}
+
+/* ─── RENDER TREND (viral/stable/peak) ─── */
+function renderTrend(items, section, meta) {
+  const el = document.getElementById(section)
+  const accentClass = { viral:'accent', stable:'accent-cyan', peak:'accent-orange' }[section] || 'accent'
+  const cardClass   = section
+
+  let html = `
+    <div class="section-hero">
+      <div class="section-label">สินค้ากำลัง${meta.th}</div>
+      <div class="section-title"><span class="${accentClass}">${meta.icon} ${meta.en}</span></div>
+      <div class="section-desc">${meta.desc}</div>
+    </div>
+    <div class="cards">`
+
   if (!items || items.length === 0) {
-    el.innerHTML = `<div class="section-title">${label}</div><div class="empty">ไม่มีสินค้าในกลุ่มนี้วันนี้</div>`
+    html += `</div><div class="empty"><strong>${meta.icon}</strong>ไม่มีสินค้าในกลุ่มนี้วันนี้</div>`
+    el.innerHTML = html
     return
   }
-  let html = `<div class="section-title">${label} <small style="font-size:0.75rem;font-weight:400;color:#888">${desc}</small></div><div class="cards">`
+
   items.forEach(item => {
     html += `
-      <div class="card">
+      <div class="card ${cardClass}">
         ${imgEl(item.img)}
         <div class="card-body">
-          <div class="card-title">${item.title}</div>
-          <div class="badges">
-            <span class="badge badge-orange">📦 1วัน: ${item.sold1d.toLocaleString()}</span>
-            <span class="badge badge-blue">3วัน: ${item.sold3d.toLocaleString()}</span>
-            <span class="badge badge-gray">📈 x${item.growth}</span>
+          <div class="card-title">${esc(item.title)}</div>
+          <div class="stats-row">
+            <div class="stat">
+              <div class="stat-val">${item.sold1d.toLocaleString()}</div>
+              <div class="stat-lbl">เมื่อวาน</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+              <div class="stat-val">${item.sold3d.toLocaleString()}</div>
+              <div class="stat-lbl">3 วัน</div>
+            </div>
+            <span class="growth-x">×${item.growth}</span>
           </div>
-          ${item.link ? `<a class="btn-shop" href="${item.link}" target="_blank">🛒 ดูสินค้า</a>` : ''}
+          ${shopBtn(item.link)}
         </div>
       </div>`
   })
+
   html += '</div>'
   el.innerHTML = html
 }
 
-function renderTop5(items, containerId) {
-  const el = document.getElementById(containerId)
+/* ─── RENDER TOP 5 ─── */
+function renderTop5(items) {
+  const el = document.getElementById('top5')
+  let html = `
+    <div class="section-hero">
+      <div class="section-label">ยอดขายสูงสุด</div>
+      <div class="section-title"><span class="accent-gold">🏆 TOP 5</span></div>
+      <div class="section-desc">เรียงตาม GMV · อัพเดทรายวัน</div>
+    </div>
+    <div class="cards">`
+
   if (!items || items.length === 0) {
-    el.innerHTML = `<div class="section-title">🏆 TOP 5 ขายดีที่สุด <small style="font-size:0.75rem;font-weight:400;color:#888">เรียงตาม GMV</small></div><div class="empty">ไม่มีข้อมูลวันนี้</div>`
+    html += `</div><div class="empty"><strong>🏆</strong>ไม่มีข้อมูล TOP 5 วันนี้</div>`
+    el.innerHTML = html
     return
   }
-  let html = `<div class="section-title">🏆 TOP 5 ขายดีที่สุด <small style="font-size:0.75rem;font-weight:400;color:#888">เรียงตาม GMV</small></div><div class="cards">`
+
   items.forEach((item, idx) => {
     const vc = []
-    if (item.videos   !== null && item.videos   !== undefined) vc.push(`🎬 ${item.videos} คลิป${item.videos === 0 ? ' ← น้อยมาก!' : ''}`)
-    if (item.creators !== null && item.creators !== undefined) vc.push(`👥 ${item.creators} Creator`)
+    if (item.videos   != null) vc.push(`🎬 ${item.videos} คลิป${item.videos === 0 ? ' · น้อยมาก!' : ''}`)
+    if (item.creators != null) vc.push(`👥 ${item.creators} Creator`)
 
     html += `
       <div class="card">
         ${imgEl(item.img, idx + 1)}
         <div class="card-body">
-          <div class="card-title">${item.title}</div>
-          ${item.seller ? `<div class="seller-name">🏪 ${item.seller}</div>` : ''}
-          <div class="badges">
-            <span class="badge badge-orange">📦 ${item.sold.toLocaleString()} ชิ้น</span>
-            <span class="badge badge-gray">รวม ${item.total.toLocaleString()}</span>
-            ${growthBadge(item.growth)}
+          <div class="card-title">${esc(item.title)}</div>
+          ${item.seller ? `<div class="seller">🏪 ${esc(item.seller)}</div>` : ''}
+          <div class="stats-row">
+            <div class="stat">
+              <div class="stat-val">${item.sold.toLocaleString()}</div>
+              <div class="stat-lbl">ขาย (รอบนี้)</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+              <div class="stat-val">${item.total.toLocaleString()}</div>
+              <div class="stat-lbl">รวมทั้งหมด</div>
+            </div>
+            ${growthPill(item.growth)}
           </div>
-          ${commBadge(item.comm)}
-          ${vc.length ? `<div class="stats">${vc.map(v => `<span>${v}</span>`).join('')}</div>` : ''}
-          ${item.link ? `<a class="btn-shop" href="${item.link}" target="_blank">🛒 ดูสินค้า</a>` : ''}
+          <div class="comm-row">
+            ${commPill(item.comm)}
+            ${vc.map(v => `<span class="comm-warn">${v}</span>`).join('')}
+          </div>
+          ${shopBtn(item.link)}
         </div>
       </div>`
   })
+
   html += '</div>'
   el.innerHTML = html
 }
 
-// โหลดข้อมูล
+/* ─── LOAD DATA ─── */
 async function loadData() {
-  document.getElementById('viral').innerHTML  = '<div class="loading"><div class="spinner"></div>กำลังโหลด...</div>'
-  document.getElementById('stable').innerHTML = '<div class="loading"><div class="spinner"></div>กำลังโหลด...</div>'
-  document.getElementById('peak').innerHTML   = '<div class="loading"><div class="spinner"></div>กำลังโหลด...</div>'
-  document.getElementById('top5').innerHTML   = '<div class="loading"><div class="spinner"></div>กำลังโหลด...</div>'
-
   try {
     const res  = await fetch('data/latest.json?t=' + Date.now())
+    if (!res.ok) throw new Error(res.status)
     const data = await res.json()
 
-    document.getElementById('updated').textContent = `อัพเดทล่าสุด: ${data.updated}`
+    document.getElementById('updated').textContent = `อัพเดท ${data.updated}`
 
-    renderTrend(data.viral,  '🚀 VIRAL',  'เพิ่งระเบิด ทำเลยด่วน!',    'viral')
-    renderTrend(data.stable, '📈 STABLE', 'กำลังโต ยังทันทำ',           'stable')
-    renderTrend(data.peak,   '⚠️ PEAK',   'ขายดีแต่อิ่มตัวแล้ว',       'peak')
-    renderTop5(data.top5,    'top5')
+    renderTrend(data.viral,  'viral',  { icon:'🚀', en:'VIRAL',  th:'ระเบิด',    desc:'Growth ×2.5+ ใน 24 ชม. — ทำเลยก่อนคนอื่น' })
+    renderTrend(data.stable, 'stable', { icon:'📈', en:'STABLE', th:'โต',         desc:'กำลังขึ้นสม่ำเสมอ — ยังทันทำคลิป' })
+    renderTrend(data.peak,   'peak',   { icon:'⚠️', en:'PEAK',   th:'อิ่มตัว',   desc:'ขายดีแต่โมเมนตัมชะลอ — คู่แข่งเริ่มเยอะ' })
+    renderTop5(data.top5)
 
   } catch (e) {
     console.error(e)
-    document.getElementById('updated').textContent = 'โหลดข้อมูลไม่ได้ — กรุณา run workflow ก่อน'
-    document.getElementById('viral').innerHTML  = '<div class="empty">⚠️ ยังไม่มีข้อมูล<br>กรุณา run workflow ใน GitHub Actions ก่อน</div>'
-    document.getElementById('stable').innerHTML = ''
-    document.getElementById('peak').innerHTML   = ''
-    document.getElementById('top5').innerHTML   = ''
+    document.getElementById('updated').textContent = 'โหลดไม่ได้'
+    document.getElementById('viral').innerHTML = `
+      <div class="empty">
+        <strong>⚠️</strong>
+        ยังไม่มีข้อมูล<br>
+        <small>รัน GitHub Actions ก่อน แล้วรีเฟรชหน้านี้</small>
+      </div>`
+    ;['stable','peak','top5'].forEach(id => document.getElementById(id).innerHTML = '')
   }
 }
 
