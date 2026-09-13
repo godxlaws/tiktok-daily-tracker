@@ -401,7 +401,7 @@ function trendCard(item, cls) {
           </div>
           <span class="growth-tag">×${item.growth}</span>
         </div>
-        ${item.link ? `<a class="pcard-cta" href="${esc(item.link)}" target="_blank" rel="noopener">ดูสินค้า →</a>` : ''}
+        ${item.link ? `<a class="pcard-cta" href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">ดูสินค้า →</a>` : ''}
       </div>
     </div>`
 }
@@ -435,7 +435,7 @@ function topCard(item, rank) {
         </div>
         ${commHtml}
         ${meta.length ? `<div class="pcard-meta">${meta.join(' · ')}</div>` : ''}
-        ${item.link ? `<a class="pcard-cta" href="${esc(item.link)}" target="_blank" rel="noopener">ดูสินค้า →</a>` : ''}
+        ${item.link ? `<a class="pcard-cta" href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">ดูสินค้า →</a>` : ''}
       </div>
     </div>`
 }
