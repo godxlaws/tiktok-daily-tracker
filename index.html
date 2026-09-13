@@ -8,15 +8,16 @@
 :root {
   --red:    #FE2C55;
   --cyan:   #25F4EE;
-  --bg:     #080808;
-  --surf:   #111111;
-  --card:   #161616;
-  --border: #242424;
-  --text:   #FFFFFF;
-  --muted:  #666;
-  --green:  #3ECF6B;
-  --orange: #FF9500;
-  --gold:   #FFD700;
+  --bg:     #F5F5F5;
+  --surf:   #FFFFFF;
+  --card:   #FFFFFF;
+  --border: #E8E8E8;
+  --text:   #111111;
+  --sub:    #444444;
+  --muted:  #888888;
+  --green:  #1A9E4A;
+  --orange: #D4700A;
+  --gold:   #B8860B;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,8 +38,8 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(8,8,8,0.94);
-  backdrop-filter: blur(14px);
+  background: rgba(245,245,245,0.95);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -50,20 +51,21 @@ body {
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 18px;
-  box-shadow: 3px 3px 0 var(--cyan);
+  box-shadow: 3px 3px 0 #25F4EE;
   flex-shrink: 0;
 }
 
-.logo-name { font-size: 1rem; font-weight: 800; letter-spacing: -0.3px; }
+.logo-name { font-size: 1rem; font-weight: 800; letter-spacing: -0.3px; color: var(--text); }
 .logo-sub  { font-size: 0.65rem; color: var(--muted); }
 
 .ts {
   font-size: 0.68rem;
-  color: var(--muted);
+  color: var(--sub);
   background: var(--surf);
   border: 1px solid var(--border);
   padding: 4px 10px;
   border-radius: 20px;
+  white-space: nowrap;
 }
 
 /* ── TABS ── */
@@ -71,8 +73,8 @@ body {
   display: flex;
   overflow-x: auto;
   scrollbar-width: none;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  background: var(--surf);
+  border-bottom: 2px solid var(--border);
   position: sticky;
   top: 65px;
   z-index: 19;
@@ -82,20 +84,21 @@ body {
 .tab {
   flex: 1;
   text-align: center;
-  padding: 13px 10px;
+  padding: 13px 8px;
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--muted);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   white-space: nowrap;
   transition: color .15s, border-color .15s;
   user-select: none;
+  margin-bottom: -2px;
 }
 .tab[data-id="viral"].active  { color: var(--red);    border-color: var(--red); }
-.tab[data-id="stable"].active { color: var(--cyan);   border-color: var(--cyan); }
-.tab[data-id="peak"].active   { color: var(--orange); border-color: var(--orange); }
-.tab[data-id="top5"].active   { color: var(--gold);   border-color: var(--gold); }
+.tab[data-id="stable"].active { color: #0099AA;        border-color: #0099AA; }
+.tab[data-id="peak"].active   { color: var(--orange);  border-color: var(--orange); }
+.tab[data-id="top5"].active   { color: var(--gold);    border-color: var(--gold); }
 
 /* ── SECTIONS ── */
 .section { display: none; }
@@ -103,7 +106,8 @@ body {
 
 /* ── SECTION INTRO ── */
 .intro {
-  padding: 24px 16px 16px;
+  padding: 22px 16px 14px;
+  background: var(--surf);
   border-bottom: 1px solid var(--border);
 }
 .intro-eyebrow {
@@ -112,23 +116,25 @@ body {
   letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 .intro-title {
   font-size: 2rem;
   font-weight: 900;
   letter-spacing: -1px;
   line-height: 1;
+  color: var(--text);
 }
 .intro-title .r { color: var(--red); }
-.intro-title .c { color: var(--cyan); }
+.intro-title .c { color: #0099AA; }
 .intro-title .o { color: var(--orange); }
 .intro-title .g { color: var(--gold); }
 .intro-sub {
-  font-size: 0.78rem;
-  color: var(--muted);
+  font-size: 0.82rem;
+  color: var(--sub);
   margin-top: 6px;
   line-height: 1.5;
+  font-weight: 500;
 }
 
 /* ── GRID ── */
@@ -138,16 +144,10 @@ body {
   gap: 10px;
   padding: 14px;
 }
+@media (min-width: 700px)  { .grid { grid-template-columns: repeat(3,1fr); } }
+@media (min-width: 1000px) { .grid { grid-template-columns: repeat(4,1fr); } }
 
-@media (min-width: 700px) {
-  .grid { grid-template-columns: repeat(3, 1fr); }
-}
-
-@media (min-width: 1000px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
-}
-
-/* ── PRODUCT CARD (vertical) ── */
+/* ── PRODUCT CARD ── */
 .pcard {
   background: var(--card);
   border: 1px solid var(--border);
@@ -155,44 +155,39 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: border-color .15s, transform .1s;
-  position: relative;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  transition: box-shadow .15s, transform .1s;
 }
 .pcard:active { transform: scale(0.98); }
 
 .pcard.viral  { border-top: 3px solid var(--red); }
-.pcard.stable { border-top: 3px solid var(--cyan); }
+.pcard.stable { border-top: 3px solid #0099AA; }
 .pcard.peak   { border-top: 3px solid var(--orange); }
 
-/* image area */
+/* image */
 .pcard-img-wrap {
   position: relative;
   width: 100%;
-  padding-top: 100%; /* square */
-  background: var(--surf);
+  padding-top: 100%;
+  background: #F0F0F0;
   overflow: hidden;
 }
 .pcard-img {
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
 }
 .pcard-no-img {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2.5rem;
-  color: var(--border);
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.5rem; color: #CCC;
 }
 
 .rank-pin {
   position: absolute;
   top: 8px; left: 8px;
   background: var(--gold);
-  color: #000;
+  color: #fff;
   font-size: 0.62rem;
   font-weight: 900;
   padding: 3px 7px;
@@ -207,10 +202,10 @@ body {
   padding: 3px 7px;
   border-radius: 8px;
 }
-.growth-pin.up   { background: rgba(62,207,107,.9);  color: #000; }
-.growth-pin.down { background: rgba(254,44,85,.9);   color: #fff; }
-.growth-pin.flat { background: rgba(60,60,60,.9);    color: #aaa; }
-.growth-pin.new  { background: rgba(37,244,238,.9);  color: #000; }
+.growth-pin.up   { background: #1A9E4A; color: #fff; }
+.growth-pin.down { background: var(--red); color: #fff; }
+.growth-pin.flat { background: #999; color: #fff; }
+.growth-pin.new  { background: #0099AA; color: #fff; }
 
 /* body */
 .pcard-body {
@@ -222,9 +217,9 @@ body {
 }
 
 .pcard-title {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -240,10 +235,11 @@ body {
   text-overflow: ellipsis;
 }
 
-/* big number stats */
+/* stats */
 .pcard-stats {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  align-items: flex-end;
 }
 .pstat { display: flex; flex-direction: column; }
 .pstat-val {
@@ -251,44 +247,45 @@ body {
   font-weight: 900;
   letter-spacing: -0.5px;
   line-height: 1;
+  color: var(--text);
 }
 .pstat-lbl {
   font-size: 0.58rem;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 600;
   margin-top: 2px;
 }
 
 .growth-tag {
   font-size: 0.65rem;
   font-weight: 700;
-  align-self: flex-end;
   color: var(--muted);
-  background: rgba(255,255,255,.05);
+  background: #F0F0F0;
   padding: 2px 6px;
   border-radius: 6px;
+  align-self: flex-end;
 }
 
 /* commission */
 .pcard-comm {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 8px;
   width: fit-content;
 }
-.pcard-comm.ok   { background: rgba(62,207,107,.12); color: var(--green); }
-.pcard-comm.zero { background: rgba(100,100,100,.12); color: #555; }
+.pcard-comm.ok   { background: #E6F7EC; color: var(--green); border: 1px solid #B8E8C8; }
+.pcard-comm.zero { background: #F5F5F5; color: #999;         border: 1px solid #DDD; }
 
-/* meta (videos/creators) */
+/* meta */
 .pcard-meta {
-  font-size: 0.63rem;
-  color: var(--muted);
+  font-size: 0.65rem;
+  color: var(--sub);
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  font-weight: 500;
 }
-.pcard-meta span { display: flex; align-items: center; gap: 2px; }
 
 /* cta */
 .pcard-cta {
@@ -306,7 +303,7 @@ body {
   margin-top: auto;
   transition: opacity .15s;
 }
-.pcard-cta:hover, .pcard-cta:active { opacity: .85; }
+.pcard-cta:hover { opacity: .85; }
 
 /* ── EMPTY / LOADING ── */
 .empty {
@@ -316,7 +313,7 @@ body {
   color: var(--muted);
 }
 .empty-icon { font-size: 3rem; display: block; margin-bottom: 10px; }
-.empty p { font-size: 0.85rem; line-height: 1.7; }
+.empty p { font-size: 0.85rem; line-height: 1.7; color: var(--sub); }
 
 .loading-wrap {
   display: flex;
@@ -325,8 +322,8 @@ body {
   justify-content: center;
   padding: 80px 20px;
   gap: 14px;
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--sub);
+  font-size: 0.85rem;
 }
 .spinner {
   width: 30px; height: 30px;
@@ -340,7 +337,6 @@ body {
 </head>
 <body>
 
-<!-- HEADER -->
 <header class="header">
   <div class="logo">
     <div class="logo-icon">▶</div>
@@ -352,7 +348,6 @@ body {
   <div class="ts" id="updated">กำลังโหลด…</div>
 </header>
 
-<!-- TABS -->
 <nav class="tabs">
   <div class="tab active" data-id="viral"  onclick="go('viral')">🚀 VIRAL</div>
   <div class="tab"        data-id="stable" onclick="go('stable')">📈 STABLE</div>
@@ -366,13 +361,11 @@ body {
 <div id="top5"   class="section"></div>
 
 <script>
-/* ── SWITCH TAB ── */
 function go(id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id === id))
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id))
 }
 
-/* ── HELPERS ── */
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 
 function growthPin(g) {
@@ -382,27 +375,19 @@ function growthPin(g) {
   return '<span class="growth-pin flat">→</span>'
 }
 
-function growthPinTop(g) {
-  if (g == null) return '<span class="growth-pin new">✦ ใหม่</span>'
-  if (g > 0)     return `<span class="growth-pin up">↑ +${g}%</span>`
-  if (g < 0)     return `<span class="growth-pin down">↓ ${g}%</span>`
-  return '<span class="growth-pin flat">→</span>'
-}
-
-function imgArea(url, rankNum, growth, isTop) {
+function imgArea(url, rankNum, growth) {
   const rpin = rankNum ? `<div class="rank-pin">#${rankNum}</div>` : ''
-  const gpin = isTop ? growthPinTop(growth) : growthPin(growth)
+  const gpin = growth !== undefined ? growthPin(growth) : ''
   const inner = url
     ? `<img class="pcard-img" src="${esc(url)}" onerror="this.parentNode.innerHTML='<div class=pcard-no-img>🛍</div>'">`
     : `<div class="pcard-no-img">🛍</div>`
   return `<div class="pcard-img-wrap">${inner}${rpin}${gpin}</div>`
 }
 
-/* ── TREND CARD ── */
 function trendCard(item, cls) {
   return `
     <div class="pcard ${cls}">
-      ${imgArea(item.img, null, null, false)}
+      ${imgArea(item.img)}
       <div class="pcard-body">
         <div class="pcard-title">${esc(item.title)}</div>
         <div class="pcard-stats">
@@ -421,21 +406,20 @@ function trendCard(item, cls) {
     </div>`
 }
 
-/* ── TOP CARD ── */
 function topCard(item, rank) {
   const commHtml = item.comm === 0
-    ? '<div class="pcard-comm zero">Commission 0% — เช็คก่อน</div>'
+    ? '<div class="pcard-comm zero">Commission 0% — เช็คก่อนทำ</div>'
     : item.comm > 0
       ? `<div class="pcard-comm ok">💸 ${item.comm}% commission</div>`
       : ''
 
   const meta = []
-  if (item.videos   != null) meta.push(`<span>🎬 ${item.videos}${item.videos===0?' · น้อยมาก!':''}</span>`)
-  if (item.creators != null) meta.push(`<span>👥 ${item.creators}</span>`)
+  if (item.videos   != null) meta.push(`🎬 ${item.videos} คลิป${item.videos===0?' (น้อยมาก!)':''}`)
+  if (item.creators != null) meta.push(`👥 ${item.creators} Creator`)
 
   return `
     <div class="pcard">
-      ${imgArea(item.img, rank, item.growth, true)}
+      ${imgArea(item.img, rank, item.growth)}
       <div class="pcard-body">
         <div class="pcard-title">${esc(item.title)}</div>
         ${item.seller ? `<div class="pcard-seller">🏪 ${esc(item.seller)}</div>` : ''}
@@ -450,17 +434,16 @@ function topCard(item, rank) {
           </div>
         </div>
         ${commHtml}
-        ${meta.length ? `<div class="pcard-meta">${meta.join('')}</div>` : ''}
+        ${meta.length ? `<div class="pcard-meta">${meta.join(' · ')}</div>` : ''}
         ${item.link ? `<a class="pcard-cta" href="${esc(item.link)}" target="_blank" rel="noopener">ดูสินค้า →</a>` : ''}
       </div>
     </div>`
 }
 
-/* ── RENDER ── */
 function renderTrend(items, id, meta) {
-  const el = document.getElementById(id)
-  const ac = {viral:'r', stable:'c', peak:'o'}[id] || 'r'
-  const cls = id === 'top5' ? '' : id
+  const el  = document.getElementById(id)
+  const cls = id
+  const ac  = {viral:'r', stable:'c', peak:'o'}[id] || 'r'
 
   let html = `
     <div class="intro">
@@ -486,7 +469,7 @@ function renderTop5(items) {
     <div class="intro">
       <div class="intro-eyebrow">ยอดขายสูงสุด</div>
       <div class="intro-title"><span class="g">🏆 TOP 5</span></div>
-      <div class="intro-sub">เรียงตาม GMV รายวัน — ดูก่อน ตัดสินใจที่ commission</div>
+      <div class="intro-sub">เรียงตาม GMV รายวัน — ดู Commission ก่อนตัดสินใจทำคลิป</div>
     </div>
     <div class="grid">`
 
@@ -500,7 +483,6 @@ function renderTop5(items) {
   el.innerHTML = html
 }
 
-/* ── FETCH ── */
 async function init() {
   try {
     const r    = await fetch('data/latest.json?t=' + Date.now())
@@ -509,11 +491,11 @@ async function init() {
 
     document.getElementById('updated').textContent = `อัพเดท ${data.updated}`
 
-    renderTrend(data.viral,  'viral',  { icon:'🚀', en:'VIRAL',  th:'ระเบิด',  desc:'Growth ×2.5+ — ทำเลยก่อนใคร' })
-    renderTrend(data.stable, 'stable', { icon:'📈', en:'STABLE', th:'โต',       desc:'ขึ้นสม่ำเสมอ — ยังทันทำคลิป' })
-    renderTrend(data.peak,   'peak',   { icon:'⚠️', en:'PEAK',   th:'อิ่มตัว', desc:'ขายดีแต่ชะลอ — คู่แข่งเริ่มเยอะ' })
+    renderTrend(data.viral,  'viral',  { icon:'🚀', en:'VIRAL',  th:'ระเบิด',  desc:'Growth ×2.5 ขึ้นไป — ทำเลยก่อนใคร คู่แข่งยังน้อย' })
+    renderTrend(data.stable, 'stable', { icon:'📈', en:'STABLE', th:'โต',       desc:'ยอดขายขึ้นสม่ำเสมอ — ยังทันทำคลิปและได้ผล' })
+    renderTrend(data.peak,   'peak',   { icon:'⚠️', en:'PEAK',   th:'อิ่มตัว', desc:'ขายดีแต่โมเมนตัมชะลอ — คู่แข่งเริ่มเยอะ ระวัง' })
     renderTop5(data.top5)
-  } catch (e) {
+  } catch(e) {
     document.getElementById('updated').textContent = 'โหลดไม่ได้'
     document.getElementById('viral').innerHTML = `
       <div class="intro">
@@ -522,7 +504,7 @@ async function init() {
       <div class="grid">
         <div class="empty">
           <span class="empty-icon">⚠️</span>
-          <p>ยังไม่มีข้อมูล<br><small>รัน GitHub Actions ก่อน แล้วรีเฟรชหน้านี้</small></p>
+          <p>ยังไม่มีข้อมูล<br>รัน GitHub Actions ก่อน แล้วรีเฟรชหน้านี้</p>
         </div>
       </div>`
   }
