@@ -1,5 +1,5 @@
 {
-  "updated": "13/09/2026 05:52",
+  "updated": "13/09/2026 11:37",
   "viral": [
     {
       "id": "1733031086944454634",
@@ -71,56 +71,17 @@
   ],
   "top5": [
     {
-      "id": "1736671620628907398",
-      "title": "สบู่มังคุดวีไวท์ (สบู่ล้างหน้า) แถมถุงทำฟอง",
-      "img": "https://cdn.tabcut.com/dataservice/media/item/1736671620628907398/17366716206289073980.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
-      "link": "https://www.tiktok.com/view/product/1736671620628907398",
-      "seller": "CEO V WHITE",
-      "sold": 283,
-      "total": 9753,
-      "growth": 2.5,
-      "comm": 0.0,
-      "videos": 148,
-      "creators": 69
-    },
-    {
-      "id": "1729899345850239790",
-      "title": "ชาร์ลอตวิตามินครีม ขนาดใหญ่ 15 กรัม",
-      "img": "https://cdn.tabcut.com/dataservice/media/item/1729899345850239790/17298993458502397900.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
-      "link": "https://www.tiktok.com/view/product/1729899345850239790",
-      "seller": "พี่หนุงหนิง อาภานันท์ โขมะนาม",
-      "sold": 278,
-      "total": 141628,
-      "growth": 13.9,
-      "comm": 9.0,
-      "videos": 26,
-      "creators": 18
-    },
-    {
-      "id": "1735783814374917665",
-      "title": "** หมด!! เติมของ 17 กันยา** (Official) หัวเชื้อเวียดนาม PDRN",
-      "img": "https://cdn.tabcut.com/dataservice/media/item/1735783814374917665/17357838143749176650.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
-      "link": "https://www.tiktok.com/view/product/1735783814374917665",
-      "seller": "Nc store98",
-      "sold": 287,
-      "total": 4633,
+      "id": "1736525414001641246",
+      "title": "【แพ็กคุ้ม】Dr.Lan แชมพูสระผมโรสแมรี่ 200 มล. ทำความสะอาดอย่าง",
+      "img": "https://cdn.tabcut.com/dataservice/media/item/1736525414001641246/17365254140016412460.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
+      "link": "https://www.tiktok.com/view/product/1736525414001641246",
+      "seller": "DR.LAN ZTH",
+      "sold": 175297,
+      "total": 175337,
       "growth": null,
       "comm": 0.0,
-      "videos": 4,
-      "creators": 1
-    },
-    {
-      "id": "1735949504467600835",
-      "title": "ตะกร้าพิเศษ 9.9 บูสเตอร์พรีเมียมพะพิม 500ml.(แพ็คเก็จใหม่)",
-      "img": "https://cdn.tabcut.com/dataservice/media/item/1735949504467600835/17359495044676008350.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
-      "link": "https://www.tiktok.com/view/product/1735949504467600835",
-      "seller": "เจ้าของแบรนด์ พะ พิม",
-      "sold": 190,
-      "total": 8218,
-      "growth": null,
-      "comm": 0.0,
-      "videos": 9,
-      "creators": 7
+      "videos": 2,
+      "creators": 2
     },
     {
       "id": "1734245710978451151",
@@ -128,12 +89,51 @@
       "img": "https://cdn.tabcut.com/dataservice/media/item/1734245710978451151/17342457109784511510.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
       "link": "https://www.tiktok.com/view/product/1734245710978451151",
       "seller": "YerpallThailand",
-      "sold": 210,
-      "total": 38431,
-      "growth": -11.0,
+      "sold": 271,
+      "total": 38702,
+      "growth": 29.0,
       "comm": 15.0,
       "videos": 70,
       "creators": 44
+    },
+    {
+      "id": "1735783814374917665",
+      "title": "** หมด!! เติมของ 17 กันยา** (Official) หัวเชื้อเวียดนาม PDRN",
+      "img": "https://cdn.tabcut.com/dataservice/media/item/1735783814374917665/17357838143749176650.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
+      "link": "https://www.tiktok.com/view/product/1735783814374917665",
+      "seller": "Nc store98",
+      "sold": 284,
+      "total": 4917,
+      "growth": -1.1,
+      "comm": 0.0,
+      "videos": 4,
+      "creators": 1
+    },
+    {
+      "id": "1729899345850239790",
+      "title": "ชาร์ลอตวิตามินครีม ขนาดใหญ่ 15 กรัม",
+      "img": "https://cdn.tabcut.com/dataservice/media/item/1729899345850239790/17298993458502397900.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
+      "link": "https://www.tiktok.com/view/product/1729899345850239790",
+      "seller": "พี่หนุงหนิง อาภานันท์ โขมะนาม",
+      "sold": 190,
+      "total": 141818,
+      "growth": -31.6,
+      "comm": 9.0,
+      "videos": 26,
+      "creators": 18
+    },
+    {
+      "id": "1736671620628907398",
+      "title": "สบู่มังคุดวีไวท์ (สบู่ล้างหน้า) แถมถุงทำฟอง",
+      "img": "https://cdn.tabcut.com/dataservice/media/item/1736671620628907398/17366716206289073980.webp?x-oss-process=image/resize,w_246,h_246/format,webp",
+      "link": "https://www.tiktok.com/view/product/1736671620628907398",
+      "seller": "CEO V WHITE",
+      "sold": 159,
+      "total": 9912,
+      "growth": -43.8,
+      "comm": 0.0,
+      "videos": 152,
+      "creators": 72
     }
   ]
 }
