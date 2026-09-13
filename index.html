@@ -29,7 +29,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── HEADER ── */
 .header {
   display: flex;
   align-items: center;
@@ -68,7 +67,6 @@ body {
   white-space: nowrap;
 }
 
-/* ── TABS ── */
 .tabs {
   display: flex;
   overflow-x: auto;
@@ -100,11 +98,9 @@ body {
 .tab[data-id="peak"].active   { color: var(--orange);  border-color: var(--orange); }
 .tab[data-id="top5"].active   { color: var(--gold);    border-color: var(--gold); }
 
-/* ── SECTIONS ── */
 .section { display: none; }
 .section.active { display: block; }
 
-/* ── SECTION INTRO ── */
 .intro {
   padding: 22px 16px 14px;
   background: var(--surf);
@@ -137,7 +133,6 @@ body {
   font-weight: 500;
 }
 
-/* ── GRID ── */
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -147,7 +142,6 @@ body {
 @media (min-width: 700px)  { .grid { grid-template-columns: repeat(3,1fr); } }
 @media (min-width: 1000px) { .grid { grid-template-columns: repeat(4,1fr); } }
 
-/* ── PRODUCT CARD ── */
 .pcard {
   background: var(--card);
   border: 1px solid var(--border);
@@ -159,7 +153,6 @@ body {
   transition: box-shadow .15s, transform .1s;
 }
 .pcard:active { transform: scale(0.98); }
-
 .pcard.viral  { border-top: 3px solid var(--red); }
 .pcard.stable { border-top: 3px solid #0099AA; }
 .pcard.peak   { border-top: 3px solid var(--orange); }
@@ -172,11 +165,22 @@ body {
   background: #F0F0F0;
   overflow: hidden;
 }
+
+/* ทำให้รูปกดได้ */
+.pcard-img-wrap a {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
 .pcard-img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
+  transition: transform .2s;
 }
+.pcard-img-wrap a:hover .pcard-img { transform: scale(1.03); }
+
 .pcard-no-img {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
@@ -192,6 +196,7 @@ body {
   font-weight: 900;
   padding: 3px 7px;
   border-radius: 8px;
+  z-index: 1;
 }
 
 .growth-pin {
@@ -201,13 +206,13 @@ body {
   font-weight: 800;
   padding: 3px 7px;
   border-radius: 8px;
+  z-index: 1;
 }
 .growth-pin.up   { background: #1A9E4A; color: #fff; }
 .growth-pin.down { background: var(--red); color: #fff; }
 .growth-pin.flat { background: #999; color: #fff; }
 .growth-pin.new  { background: #0099AA; color: #fff; }
 
-/* body */
 .pcard-body {
   flex: 1;
   padding: 10px 10px 12px;
@@ -235,7 +240,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* stats */
 .pcard-stats {
   display: flex;
   gap: 10px;
@@ -266,7 +270,6 @@ body {
   align-self: flex-end;
 }
 
-/* commission */
 .pcard-comm {
   font-size: 0.7rem;
   font-weight: 700;
@@ -277,7 +280,6 @@ body {
 .pcard-comm.ok   { background: #E6F7EC; color: var(--green); border: 1px solid #B8E8C8; }
 .pcard-comm.zero { background: #F5F5F5; color: #999;         border: 1px solid #DDD; }
 
-/* meta */
 .pcard-meta {
   font-size: 0.65rem;
   color: var(--sub);
@@ -287,7 +289,6 @@ body {
   font-weight: 500;
 }
 
-/* cta */
 .pcard-cta {
   display: flex;
   align-items: center;
@@ -305,7 +306,6 @@ body {
 }
 .pcard-cta:hover { opacity: .85; }
 
-/* ── EMPTY / LOADING ── */
 .empty {
   grid-column: 1/-1;
   text-align: center;
@@ -375,19 +375,25 @@ function growthPin(g) {
   return '<span class="growth-pin flat">→</span>'
 }
 
-function imgArea(url, rankNum, growth) {
-  const rpin = rankNum ? `<div class="rank-pin">#${rankNum}</div>` : ''
-  const gpin = growth !== undefined ? growthPin(growth) : ''
-  const inner = url
+function imgArea(url, rankNum, growth, link) {
+  const rpin  = rankNum ? `<div class="rank-pin">#${rankNum}</div>` : ''
+  const gpin  = growth !== undefined ? growthPin(growth) : ''
+  const imgEl = url
     ? `<img class="pcard-img" src="${esc(url)}" onerror="this.parentNode.innerHTML='<div class=pcard-no-img>🛍</div>'">`
     : `<div class="pcard-no-img">🛍</div>`
-  return `<div class="pcard-img-wrap">${inner}${rpin}${gpin}</div>`
+
+  // ครอบรูปด้วย <a> ถ้ามี link → กดรูปได้เลย
+  const inner = link
+    ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${imgEl}${rpin}${gpin}</a>`
+    : `${imgEl}${rpin}${gpin}`
+
+  return `<div class="pcard-img-wrap">${inner}</div>`
 }
 
 function trendCard(item, cls) {
   return `
     <div class="pcard ${cls}">
-      ${imgArea(item.img)}
+      ${imgArea(item.img, null, null, item.link)}
       <div class="pcard-body">
         <div class="pcard-title">${esc(item.title)}</div>
         <div class="pcard-stats">
@@ -419,7 +425,7 @@ function topCard(item, rank) {
 
   return `
     <div class="pcard">
-      ${imgArea(item.img, rank, item.growth)}
+      ${imgArea(item.img, rank, item.growth, item.link)}
       <div class="pcard-body">
         <div class="pcard-title">${esc(item.title)}</div>
         ${item.seller ? `<div class="pcard-seller">🏪 ${esc(item.seller)}</div>` : ''}
