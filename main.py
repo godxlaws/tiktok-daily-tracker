@@ -3,6 +3,7 @@ import os
 import json
 import time
 import base64
+import glob
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from Crypto.PublicKey import RSA
@@ -22,8 +23,9 @@ def require_env(name):
 TABCUT_EMAIL    = require_env("TABCUT_EMAIL")
 TABCUT_PASSWORD = require_env("TABCUT_PASSWORD")
 
-BASE_URL  = "https://www.tabcut.com"
-YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+BASE_URL      = "https://www.tabcut.com"
+YESTERDAY     = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+KEEP_DAYS     = 30   # เก็บย้อนหลังกี่วัน
 
 # ══════════════════════════════════════
 # SESSION
@@ -103,7 +105,7 @@ def fetch_top_selling(limit=5):
         return []
 
 # ══════════════════════════════════════
-# HELPERS — TREND
+# HELPERS
 # ══════════════════════════════════════
 
 def get(p, key, default=0):
@@ -128,10 +130,6 @@ def link(p):  return link_from_id(get(p, "itemId"))
 def img(p):
     url = get(p, "itemPicUrl")
     return url if url and url != 0 else ""
-
-# ══════════════════════════════════════
-# HELPERS — TOP SELLING
-# ══════════════════════════════════════
 
 def top_sold(p):
     info = p.get("soldCountInfo") or {}
@@ -167,7 +165,7 @@ def top_img(p):
 def top_link(p): return link_from_id(p.get("itemId", ""))
 
 # ══════════════════════════════════════
-# ANALYZE
+# ANALYZE + GROUP
 # ══════════════════════════════════════
 
 def analyze(p):
@@ -177,10 +175,6 @@ def analyze(p):
     growth = s1 / avg3
     score  = (s1 * 2) + s3 + (growth * 100)
     return s1, s3, growth, score
-
-# ══════════════════════════════════════
-# COLLECT + GROUP
-# ══════════════════════════════════════
 
 def collect_and_group():
     y  = fetch_trend(1)
@@ -196,10 +190,7 @@ def collect_and_group():
         s1, s3, growth, score = analyze(p)
         if s1 <= 0 or s3 <= 0:
             continue
-        item = {
-            "p": p, "s1": s1, "s3": s3,
-            "growth": round(growth, 2), "score": score,
-        }
+        item = {"p": p, "s1": s1, "s3": s3, "growth": round(growth, 2), "score": score}
         if growth >= 2.5:
             viral.append(item)
         elif growth < 1.2 and s1 >= 50:
@@ -243,19 +234,55 @@ def build_top_card(p):
         "creators": top_creators(p),
     }
 
-def save_json(viral, stable, peak, top, now):
+# ══════════════════════════════════════
+# SAVE + ROTATE + INDEX
+# ══════════════════════════════════════
+
+def save_and_rotate(viral, stable, peak, top, now):
     os.makedirs("data", exist_ok=True)
+
     data = {
         "updated": now.strftime("%d/%m/%Y %H:%M"),
+        "date":    now.strftime("%Y-%m-%d"),
         "viral":   [build_trend_card(i) for i in viral],
         "stable":  [build_trend_card(i) for i in stable],
         "peak":    [build_trend_card(i) for i in peak],
         "top5":    [build_top_card(p)   for p in top],
     }
+
+    # 1. บันทึกไฟล์วันนี้
+    date_str  = now.strftime("%Y-%m-%d")
+    date_file = f"data/{date_str}.json"
+    with open(date_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"✅ บันทึก {date_file}")
+
+    # 2. บันทึก latest.json (เขียนทับ)
     with open("data/latest.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print("✅ บันทึก data/latest.json แล้ว")
-    print(f"   VIRAL:{len(data['viral'])} STABLE:{len(data['stable'])} PEAK:{len(data['peak'])} TOP5:{len(data['top5'])}")
+    print("✅ บันทึก data/latest.json")
+
+    # 3. ลบไฟล์เก่าเกิน KEEP_DAYS
+    cutoff = (now - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+    deleted = []
+    for fpath in glob.glob("data/????-??-??.json"):
+        fname = os.path.basename(fpath)          # เช่น 2026-08-01.json
+        fdate = fname.replace(".json", "")        # เช่น 2026-08-01
+        if fdate < cutoff:
+            os.remove(fpath)
+            deleted.append(fdate)
+    if deleted:
+        print(f"🗑️  ลบไฟล์เก่า: {', '.join(deleted)}")
+
+    # 4. อัพเดท index.json — list วันที่ทั้งหมดที่มีข้อมูล
+    available = sorted([
+        os.path.basename(f).replace(".json", "")
+        for f in glob.glob("data/????-??-??.json")
+    ], reverse=True)   # ล่าสุดก่อน
+
+    with open("data/index.json", "w", encoding="utf-8") as f:
+        json.dump({"dates": available}, f, ensure_ascii=False, indent=2)
+    print(f"✅ index.json มี {len(available)} วัน: {available[:3]}{'...' if len(available) > 3 else ''}")
 
 # ══════════════════════════════════════
 # MAIN
@@ -267,10 +294,10 @@ def main():
         return
 
     viral, stable, peak = collect_and_group()
-    top = fetch_top_selling(5)
-    now = datetime.now(ZoneInfo("Asia/Bangkok"))
+    top  = fetch_top_selling(5)
+    now  = datetime.now(ZoneInfo("Asia/Bangkok"))
 
-    save_json(viral, stable, peak, top, now)
+    save_and_rotate(viral, stable, peak, top, now)
     print("✅ เสร็จแล้ว")
 
 if __name__ == "__main__":
