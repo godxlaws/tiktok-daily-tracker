@@ -42,7 +42,7 @@ jobs:
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git add data/latest.json
+          git add data/
           git diff --staged --quiet || git commit -m "update data $(date)"
           git push
 
